@@ -1,0 +1,15 @@
+Cekai Link
+Copyright 2026 hkdijia
+
+Licensed under the Apache License, Version 2.0.
+SPDX-License-Identifier: Apache-2.0
+
+This notice identifies the standalone Cekai Link client. Its source and
+build materials are src/publicLink/*.ts, bin/cekai-link-source.cjs,
+tools/publicLink/buildSourcePackage.mjs, and the standalone project's
+documentation and package metadata. It does not license the private
+Central service or other material outside this standalone distribution.
+
+Node.js, Codex CLI, Git and development dependencies are separately
+provided tools and retain their own licenses. They are not bundled in
+the Cekai Link runtime package.

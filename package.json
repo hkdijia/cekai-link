@@ -1,0 +1,47 @@
+{
+  "name": "@cekaitech/cekai-link",
+  "version": "0.1.0",
+  "private": false,
+  "license": "Apache-2.0",
+  "description": "Node.js client for workspace-bound Cekai Link questions through Codex CLI.",
+  "author": "hkdijia",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hkdijia/cekai-link.git"
+  },
+  "homepage": "https://github.com/hkdijia/cekai-link#readme",
+  "bugs": {
+    "url": "https://github.com/hkdijia/cekai-link/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "cekai-link": "bin/cekai-link-source.cjs"
+  },
+  "files": [
+    "bin/cekai-link-source.cjs",
+    "dist/publicLink/*.js",
+    "link-build.json",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "cekaiLink": {
+    "packageFormat": 4
+  },
+  "scripts": {
+    "test": "vitest run --maxWorkers=1",
+    "build": "tsc -p tsconfig.json && node tools/publicLink/buildSourcePackage.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.2",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}

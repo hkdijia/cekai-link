@@ -1,0 +1,96 @@
+name: Publish standalone Link
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: 'Reviewed full standalone source commit'
+        required: true
+        type: string
+      package_identity:
+        description: 'Expected sha256 packageArtifactId'
+        required: true
+        type: string
+      tarball_digest:
+        description: 'Expected sha256 tarball digest from local acceptance'
+        required: true
+        type: string
+      publish:
+        description: 'Actually publish (requires npm ownership/trusted publisher)'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: ${{ inputs.publish && 'npm-release' || 'npm-dry-run' }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Restrict publishing to the intended public repository
+        env:
+          REPOSITORY: ${{ github.repository }}
+          PRIVATE: ${{ github.event.repository.private }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          test "$REPOSITORY" = hkdijia/cekai-link
+          test "$PRIVATE" = false
+          printf '%s' "$SOURCE_SHA" | grep -Eq '^[a-f0-9]{40}$'
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify committed source
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git merge-base --is-ancestor "$SOURCE_SHA" origin/main
+          test -z "$(git status --porcelain)"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - run: node -e 'const [a,b,c]=process.versions.node.split(".").map(Number); if(a<22||(a===22&&b<14))process.exit(1)'
+      - run: npm install --global npm@11.19.0 --ignore-scripts --no-audit --no-fund
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm test && npm run build
+      - name: Verify exact package and tarball before any publish
+        env:
+          EXPECTED_IDENTITY: ${{ inputs.package_identity }}
+          EXPECTED_TARBALL: ${{ inputs.tarball_digest }}
+        run: |
+          npm pack --ignore-scripts --json > "$RUNNER_TEMP/pack.json"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import { createHash } from 'node:crypto';
+          import { verifyPublicSourcePackage } from './dist/publicLink/packageIdentity.js';
+          const b = verifyPublicSourcePackage(process.cwd());
+          const [p] = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/pack.json'));
+          const digest = 'sha256:' + createHash('sha256').update(fs.readFileSync(p.filename)).digest('hex');
+          const expectedFiles = [...b.files, 'link-build.json'].sort();
+          if(b.packageArtifactId !== process.env.EXPECTED_IDENTITY || digest !== process.env.EXPECTED_TARBALL
+            || JSON.stringify(p.files.map(f => f.path).sort()) !== JSON.stringify(expectedFiles)
+            || JSON.parse(fs.readFileSync('package.json')).private !== false) process.exit(1);
+          NODE
+      - name: Dry-run the inspected tarball
+        run: |
+          tarball="$(node -p "require(process.env.RUNNER_TEMP + '/pack.json')[0].filename")"
+          npm publish "$tarball" --dry-run --access public --ignore-scripts
+      - name: Publish through configured npm OIDC trust
+        if: ${{ inputs.publish }}
+        run: |
+          test -n "$ACTIONS_ID_TOKEN_REQUEST_URL"
+          node -e 'const [a,b,c]=require("child_process").execFileSync("npm",["--version"],{encoding:"utf8"}).trim().split(".").map(Number); if(a<11||(a===11&&(b<5||(b===5&&c<1))))process.exit(1)'
+          tarball="$(node -p "require(process.env.RUNNER_TEMP + '/pack.json')[0].filename")"
+          npm publish "$tarball" --access public --provenance --ignore-scripts
