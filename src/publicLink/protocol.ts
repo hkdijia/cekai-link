@@ -41,6 +41,17 @@ export interface PublicLinkRuntimeIdentity {
   readonly componentDigests: { readonly mcp: PublicLinkDigest; readonly schemas: PublicLinkDigest; readonly skills: PublicLinkDigest };
 }
 
+/** Existing Central health contract, without message bodies or workspace paths. */
+export interface PublicLinkRuntimeHealth {
+  readonly artifactIntegrity: 'verified' | 'unverified' | 'invalid';
+  readonly agentRuntime: {
+    readonly total: number;
+    readonly active: number;
+    readonly recoveryRequired: number;
+    readonly resumable: number;
+  };
+}
+
 export interface PublicLinkCentralSnapshot {
   readonly schemaVersion: 1;
   readonly conversationBinding: 'active' | 'required';

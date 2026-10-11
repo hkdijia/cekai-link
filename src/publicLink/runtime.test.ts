@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { createPublicLinkRuntime, type PublicLinkRuntimeStatus } from './runtime.js';
@@ -7,13 +8,14 @@ import type { PublicLinkApi } from './api.js';
 import type { PublicLinkConfigStore } from './config.js';
 import type { PublicCodexRuntime } from './codex.js';
 import type { PublicLinkConfig, PublicLinkRuntimeTask } from './protocol.js';
+import { SOURCE_PACKAGE_FILES, verifyPublicSourcePackage } from './packageIdentity.js';
 
 vi.mock('node:fs/promises', async () => {
   const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
   return { ...actual, rename: vi.fn(actual.rename) };
 });
 const roots: string[] = [];
-afterEach(async () => { vi.useRealTimers(); vi.clearAllMocks(); await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
+afterEach(async () => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.clearAllMocks(); await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 
 const rootIdentity = `sha256:${'a'.repeat(64)}` as const;
 const config: PublicLinkConfig = {
@@ -30,7 +32,7 @@ async function fixture(overrides: Partial<PublicLinkApi> = {}, options: Partial<
   const root = await mkdtemp(path.join(os.tmpdir(), 'public-link-runtime-unit-')); roots.push(root);
   const claimedTask = { ...task, leaseExpiresAt: Date.now() + 60_000 };
   const api: PublicLinkApi = {
-    pair: vi.fn(), register: vi.fn(async () => undefined), heartbeat: vi.fn(async () => undefined), readSnapshot: vi.fn(),
+    pair: vi.fn(), register: vi.fn(async () => ({})), heartbeat: vi.fn(async () => undefined), readSnapshot: vi.fn(),
     registerWorkspace: vi.fn(), claim: vi.fn(async () => claimedTask), renew: vi.fn(async () => undefined), release: vi.fn(async () => undefined),
     complete: vi.fn(async () => undefined), fail: vi.fn(async () => undefined), ...overrides
   };
@@ -45,11 +47,31 @@ async function fixture(overrides: Partial<PublicLinkApi> = {}, options: Partial<
   return { api, codex, runtime, configStore, runtimePath, validateWorkspace, claimedTask };
 }
 
+async function verifiedPackageFixture() {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'public-link-health-package-')); roots.push(root);
+  const hash = createHash('sha256');
+  for (const file of SOURCE_PACKAGE_FILES) {
+    const target = path.join(root, file); await mkdir(path.dirname(target), { recursive: true });
+    const bytes = file === 'package.json' ? JSON.stringify({ name: '@cekaitech/cekai-link', version: '0.1.0',
+      bin: { 'cekai-link': 'bin/cekai-link-source.cjs' }, cekaiLink: { packageFormat: 4 } }) : 'fixture\n';
+    await writeFile(target, bytes); hash.update(file).update('\0').update(bytes).update('\0');
+  }
+  const descriptor = { schemaVersion: 1, packageVersion: '0.1.0', publicSourceRevision: 'a'.repeat(40), sourceDigest: rootIdentity,
+    treeDigest: `sha256:${hash.digest('hex')}` };
+  const packageArtifactId = `sha256:${createHash('sha256').update(JSON.stringify(descriptor)).digest('hex')}` as const;
+  await writeFile(path.join(root, 'link-build.json'), JSON.stringify({ ...descriptor, kind: 'public-link-source-build', packageArtifactId, files: SOURCE_PACKAGE_FILES }));
+  expect(verifyPublicSourcePackage(root).packageArtifactId).toBe(packageArtifactId);
+  vi.stubEnv('CEKAI_LINK_SOURCE_PACKAGE_ROOT', root);
+  return { root, identity: { role: 'link' as const, publicPackageArtifactId: packageArtifactId, releaseId: rootIdentity, sourceRevision: 'a'.repeat(40),
+    protocolVersion: 1, contractDigest: rootIdentity, roleDigest: rootIdentity, componentDigests: { mcp: rootIdentity, schemas: rootIdentity, skills: rootIdentity } } };
+}
+
 describe('public Link read-only runtime', () => {
   it('runs only a matching bound-workspace task and completes the exact answer bytes', async () => {
     const { api, codex, runtime, claimedTask } = await fixture();
     await expect(runtime.runOnce()).resolves.toBe('completed');
-    expect(api.register).toHaveBeenCalledWith(config.serverUrl, config.credential, undefined, config.deviceName, config.workspace!.projectId);
+    expect(api.register).toHaveBeenCalledWith(config.serverUrl, config.credential, undefined, config.deviceName, config.workspace!.projectId,
+      { artifactIntegrity: 'unverified', agentRuntime: { total: 0, active: 0, recoveryRequired: 0, resumable: 0 } });
     expect(codex.runTurn).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/tmp/workspace', request: 'question' }));
     expect(api.complete).toHaveBeenCalledWith(config.serverUrl, config.credential, claimedTask, Uint8Array.from(Buffer.from('answer')));
     expect(api.fail).not.toHaveBeenCalled();
@@ -61,8 +83,106 @@ describe('public Link read-only runtime', () => {
     await expect(runtime.runOnce()).resolves.toBe('no-task');
     expect(api.register).toHaveBeenCalledTimes(2);
     for (const call of vi.mocked(api.register).mock.calls) {
-      expect(call).toEqual([config.serverUrl, config.credential, undefined, config.deviceName, config.workspace!.projectId]);
+      expect(call).toEqual([config.serverUrl, config.credential, undefined, config.deviceName, config.workspace!.projectId,
+        { artifactIntegrity: 'unverified', agentRuntime: { total: 0, active: 0, recoveryRequired: 0, resumable: 0 } }]);
     }
+  });
+
+  it('loads the persisted sequence before the first runOnce publication', async () => {
+    const published: PublicLinkRuntimeStatus[] = [];
+    const { api, runtime, runtimePath } = await fixture({ claim: vi.fn(async () => undefined) }, {
+      publishStatus: async (value) => { published.push(value); }
+    });
+    await writeFile(runtimePath, JSON.stringify({ state: 'stopped', pid: process.pid, sequence: 41, updatedAt: new Date().toISOString() }));
+    await expect(runtime.runOnce()).resolves.toBe('no-task');
+    expect(published[0].sequence).toBe(41);
+    expect(vi.mocked(api.heartbeat).mock.calls.map((call) => call[2].sequence)).toEqual([42, 43]);
+  });
+
+  it('preserves the previous sequence through a real serve startup and graceful stop', async () => {
+    const controller = new AbortController();
+    let beats = 0;
+    const { api, runtime, runtimePath } = await fixture({
+      claim: vi.fn(async () => undefined),
+      heartbeat: vi.fn(async () => { if (++beats === 2) controller.abort(); })
+    });
+    await writeFile(runtimePath, JSON.stringify({ state: 'stopped', pid: process.pid, sequence: 50, updatedAt: new Date().toISOString() }));
+    await runtime.serve(controller.signal);
+    expect(vi.mocked(api.heartbeat).mock.calls.map((call) => call[2].sequence)).toEqual([51, 52]);
+    expect(JSON.parse(await readFile(runtimePath, 'utf8'))).toMatchObject({ state: 'stopped', sequence: 52 });
+  });
+
+  it.each([[12, 9410, 9411], [70, 5, 71]])('continues after the greater local or authoritative sequence (%i, %i)', async (local, remote, next) => {
+    const { api, runtime, runtimePath } = await fixture({
+      register: vi.fn(async () => ({ heartbeatSequence: remote })), claim: vi.fn(async () => undefined)
+    });
+    await writeFile(runtimePath, JSON.stringify({ state: 'stopped', pid: process.pid, sequence: local, updatedAt: new Date().toISOString() }));
+    await expect(runtime.runOnce()).resolves.toBe('no-task');
+    expect(vi.mocked(api.heartbeat).mock.calls[0][2].sequence).toBe(next);
+  });
+
+  it('does not overwrite corrupt previous runtime evidence or silently reset its sequence', async () => {
+    const { api, runtime, runtimePath } = await fixture();
+    await writeFile(runtimePath, 'invalid previous status');
+    await expect(runtime.runOnce()).rejects.toThrow('runtime status is invalid');
+    expect(await readFile(runtimePath, 'utf8')).toBe('invalid previous status');
+    expect(api.register).not.toHaveBeenCalled();
+    expect(api.heartbeat).not.toHaveBeenCalled();
+  });
+
+  it('fails closed at sequence exhaustion rather than emitting an unsafe or reset heartbeat', async () => {
+    const { api, runtime, runtimePath } = await fixture({ register: vi.fn(async () => ({ heartbeatSequence: Number.MAX_SAFE_INTEGER })) });
+    await writeFile(runtimePath, JSON.stringify({ state: 'stopped', pid: process.pid, sequence: 0, updatedAt: new Date().toISOString() }));
+    await expect(runtime.runOnce()).rejects.toThrow('sequence is exhausted');
+    expect(api.heartbeat).not.toHaveBeenCalled();
+    expect(api.claim).not.toHaveBeenCalled();
+  });
+
+  it('preserves an interrupted task as recovery-required and does not claim another task', async () => {
+    const { api, codex, runtime, runtimePath } = await fixture({ register: vi.fn(async () => ({ heartbeatSequence: 99 })) });
+    await writeFile(runtimePath, JSON.stringify({ state: 'busy', pid: process.pid, sequence: 40, currentTask: 'interrupted-task', updatedAt: new Date().toISOString() }));
+    await expect(runtime.runOnce()).rejects.toThrow('recovery required');
+    expect(api.heartbeat).toHaveBeenCalledWith(config.serverUrl, config.credential, expect.objectContaining({
+      sequence: 100, currentTaskId: 'interrupted-task',
+      runtimeHealth: { artifactIntegrity: 'unverified', agentRuntime: { total: 1, active: 0, recoveryRequired: 1, resumable: 0 } }
+    }));
+    expect(JSON.parse(await readFile(runtimePath, 'utf8')).currentTask).toBe('interrupted-task');
+    expect(api.claim).not.toHaveBeenCalled();
+    expect(codex.runTurn).not.toHaveBeenCalled();
+  });
+
+  it('does not clear task evidence when both completion and failure acknowledgment are unavailable', async () => {
+    const { api, runtime, runtimePath } = await fixture({
+      complete: vi.fn(async () => { throw new Error('completion unavailable'); }),
+      fail: vi.fn(async () => { throw new Error('failure unavailable'); })
+    });
+    await expect(runtime.runOnce()).resolves.toBe('failed');
+    expect(JSON.parse(await readFile(runtimePath, 'utf8'))).toMatchObject({ currentTask: 'task' });
+    await expect(runtime.runOnce()).rejects.toThrow('recovery required');
+    expect(api.claim).toHaveBeenCalledOnce();
+    expect(vi.mocked(api.heartbeat).mock.calls.at(-1)![2].runtimeHealth?.agentRuntime)
+      .toEqual({ total: 1, active: 0, recoveryRequired: 1, resumable: 0 });
+  });
+
+  it('reports verified idle health only after checking the actual package bytes and exact identity', async () => {
+    const { root, identity } = await verifiedPackageFixture();
+    const { api, runtime } = await fixture({ claim: vi.fn(async () => undefined) }, { identity });
+    await expect(runtime.runOnce()).resolves.toBe('no-task');
+    expect(api.heartbeat).toHaveBeenCalledWith(config.serverUrl, config.credential, expect.objectContaining({
+      runtimeHealth: { artifactIntegrity: 'verified', agentRuntime: { total: 0, active: 0, recoveryRequired: 0, resumable: 0 } }
+    }));
+    const priorCalls = vi.mocked(api.register).mock.calls.length;
+    await writeFile(path.join(root, 'dist/publicLink/api.js'), 'tampered');
+    await expect(runtime.runOnce()).rejects.toThrow('integrity is invalid');
+    expect(api.register).toHaveBeenCalledTimes(priorCalls);
+  });
+
+  it('does not report a different valid package as the admitted runtime identity', async () => {
+    const { identity } = await verifiedPackageFixture();
+    const { api, runtime } = await fixture({}, { identity: { ...identity, publicPackageArtifactId: `sha256:${'b'.repeat(64)}` } });
+    await expect(runtime.runOnce()).rejects.toThrow('integrity is invalid');
+    expect(api.register).not.toHaveBeenCalled();
+    expect(api.claim).not.toHaveBeenCalled();
   });
 
   it('fails a mismatched Central target closed without invoking Codex', async () => {
@@ -119,6 +239,9 @@ describe('public Link read-only runtime', () => {
     try {
       await vi.waitFor(() => expect(vi.mocked(api.renew).mock.calls.length).toBeGreaterThanOrEqual(2), { interval: 5 });
       expect(api.heartbeat).toHaveBeenCalledWith(config.serverUrl, config.credential, expect.objectContaining({ currentTaskId: 'task' }));
+      expect(api.heartbeat).toHaveBeenCalledWith(config.serverUrl, config.credential, expect.objectContaining({
+        runtimeHealth: { artifactIntegrity: 'unverified', agentRuntime: { total: 1, active: 1, recoveryRequired: 0, resumable: 0 } }
+      }));
       const local = JSON.parse(await readFile(runtimePath, 'utf8'));
       expect(local).toMatchObject({ state: 'busy', currentTask: 'task' });
       const sequences = vi.mocked(api.heartbeat).mock.calls.map((call) => call[2].sequence);

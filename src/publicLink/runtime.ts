@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createPublicLinkApi, type PublicLinkApi } from './api.js';
 import { createPublicLinkConfigStore, defaultPublicLinkRuntimePath, type PublicLinkConfigStore } from './config.js';
 import { createPublicCodexRuntime, type PublicCodexRuntime } from './codex.js';
-import { readPublicSourceRuntimeIdentity } from './packageIdentity.js';
+import { readPublicSourceRuntimeIdentity, verifyPublicSourcePackage } from './packageIdentity.js';
 import { validatePublicLinkWorkspace } from './workspace.js';
 import {
   objectValue,
@@ -13,6 +13,7 @@ import {
   type PublicLinkDigest,
   type PublicLinkFailureReason,
   type PublicLinkRuntimeIdentity,
+  type PublicLinkRuntimeHealth,
   type PublicLinkRuntimeTask
 } from './protocol.js';
 
@@ -61,6 +62,7 @@ export function createPublicLinkRuntime(input: {
   let lastError: string | undefined;
   let stopped = false;
   let sequenceLoaded = false;
+  let recoveryTask: string | undefined;
   let pendingPublish: Promise<void> = Promise.resolve();
   let owning = false;
 
@@ -93,8 +95,27 @@ export function createPublicLinkRuntime(input: {
   const loadSequence = async (): Promise<void> => {
     if (sequenceLoaded) return;
     sequenceLoaded = true;
-    const previous = await readPublicLinkRuntimeStatus(runtimePath).catch(() => undefined);
-    if (previous) sequence = previous.sequence;
+    const previous = await readPublicLinkRuntimeStatus(runtimePath);
+    if (previous) {
+      sequence = previous.sequence;
+      recoveryTask = previous.currentTask;
+      currentTask = recoveryTask;
+    }
+  };
+
+  const runtimeHealth = (): PublicLinkRuntimeHealth => {
+    const root = process.env.CEKAI_LINK_SOURCE_PACKAGE_ROOT;
+    let artifactIntegrity: PublicLinkRuntimeHealth['artifactIntegrity'] = 'unverified';
+    if (root) {
+      try {
+        const artifact = verifyPublicSourcePackage(root);
+        artifactIntegrity = artifact.packageArtifactId === input.identity?.publicPackageArtifactId ? 'verified' : 'invalid';
+      } catch { artifactIntegrity = 'invalid'; }
+    }
+    return { artifactIntegrity, agentRuntime: {
+      total: currentTask ? 1 : 0, active: currentTask && !recoveryTask ? 1 : 0,
+      recoveryRequired: recoveryTask ? 1 : 0, resumable: 0
+    } };
   };
 
   const publish = (): Promise<void> => {
@@ -124,8 +145,11 @@ export function createPublicLinkRuntime(input: {
 
   const heartbeat = async (config: PublicLinkConfig): Promise<void> => {
     await loadSequence();
+    const health = runtimeHealth();
+    if (health.artifactIntegrity === 'invalid') throw new Error('Public Link package integrity is invalid');
+    if (!Number.isSafeInteger(sequence + 1)) throw new Error('Link heartbeat sequence is exhausted');
     sequence += 1;
-    await api.heartbeat(config.serverUrl, config.credential, { sequence, ...(currentTask ? { currentTaskId: currentTask } : {}), ...(input.identity ? { identity: input.identity } : {}) });
+    await api.heartbeat(config.serverUrl, config.credential, { sequence, ...(currentTask ? { currentTaskId: currentTask } : {}), ...(input.identity ? { identity: input.identity } : {}), runtimeHealth: health });
   };
 
   const runOnce = async (signal?: AbortSignal): Promise<'no-task' | 'completed' | 'failed'> => {
@@ -133,9 +157,15 @@ export function createPublicLinkRuntime(input: {
     const workspace = config.workspace;
     if (!workspace) throw new Error('Cekai Link has no registered workspace; run setup first');
     signal?.throwIfAborted();
+    await loadSequence();
     state = 'starting'; lastError = undefined; await publish();
-    await api.register(config.serverUrl, config.credential, input.identity, config.deviceName, workspace.projectId);
+    const health = runtimeHealth();
+    if (health.artifactIntegrity === 'invalid') throw new Error('Public Link package integrity is invalid');
+    const registered = await api.register(config.serverUrl, config.credential, input.identity, config.deviceName, workspace.projectId, health);
+    sequence = Math.max(sequence, registered.heartbeatSequence ?? 0);
     await heartbeat(config);
+    await publish();
+    if (recoveryTask) throw new Error('Link runtime recovery required; inspect the previous task before restarting');
     state = 'running'; await publish();
     const task = await api.claim(config.serverUrl, config.credential, leaseMs);
     if (!task) { await heartbeat(config); return 'no-task'; }
@@ -197,13 +227,13 @@ export function createPublicLinkRuntime(input: {
     } catch (error) {
       lastError = error instanceof Error ? error.message : 'public Link task failed';
       const reason = failureReason(error);
-      await api.fail(config.serverUrl, config.credential, task, reason).catch(() => undefined);
+      await api.fail(config.serverUrl, config.credential, task, reason).catch(() => { recoveryTask = task.taskId; });
       state = 'failed'; await publish();
       return 'failed';
     } finally {
       await stopMaintenance();
       shutdown.signal.removeEventListener('abort', cancel);
-      currentTask = undefined;
+      currentTask = recoveryTask;
       await heartbeat(config).catch(() => undefined);
       await publish().catch(() => undefined);
     }
@@ -213,6 +243,7 @@ export function createPublicLinkRuntime(input: {
     async runOnce(signal) { return withOwnership(() => runOnce(shutdown.signal), signal); },
     async serve(signal) {
       return withOwnership(async () => {
+        await loadSequence();
         stopped = false; state = 'starting'; await publish();
         try {
           await loadConfig();
@@ -227,7 +258,7 @@ export function createPublicLinkRuntime(input: {
             }
           }
         } finally {
-          state = 'stopped'; currentTask = undefined;
+          state = 'stopped'; currentTask = recoveryTask;
           try { await publish(); } finally { await codex.close(); }
         }
       }, signal);
@@ -242,7 +273,7 @@ export async function readPublicLinkRuntimeStatus(filePath = defaultPublicLinkRu
     const value = objectValue(JSON.parse(await readFile(filePath, 'utf8')), 'runtime status');
     const state = value.state;
     if (!['stopped', 'starting', 'running', 'busy', 'failed'].includes(String(state))) throw new Error();
-    if (!Number.isInteger(value.pid) || Number(value.pid) <= 0 || !Number.isInteger(value.sequence) || Number(value.sequence) < 0) throw new Error();
+    if (!Number.isSafeInteger(value.pid) || Number(value.pid) <= 0 || !Number.isSafeInteger(value.sequence) || Number(value.sequence) < 0) throw new Error();
     if (typeof value.updatedAt !== 'string') throw new Error();
     return {
       state: state as PublicLinkRuntimeStatus['state'], pid: Number(value.pid), sequence: Number(value.sequence),

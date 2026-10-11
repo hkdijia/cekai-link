@@ -11,14 +11,15 @@ import {
   type PublicLinkDigest,
   type PublicLinkFailureReason,
   type PublicLinkRuntimeIdentity,
+  type PublicLinkRuntimeHealth,
   type PublicLinkRuntimeTask,
   type PublicLinkWorkspace
 } from './protocol.js';
 
 export interface PublicLinkApi {
   pair(serverUrl: string, code: string, deviceName: string, identity?: PublicLinkRuntimeIdentity): Promise<Pick<PublicLinkConfig, 'credential' | 'workerId' | 'deviceId'>>;
-  register(serverUrl: string, credential: string, identity?: PublicLinkRuntimeIdentity, deviceName?: string, projectId?: string): Promise<void>;
-  heartbeat(serverUrl: string, credential: string, input: { sequence: number; currentTaskId?: string; identity?: PublicLinkRuntimeIdentity }): Promise<void>;
+  register(serverUrl: string, credential: string, identity?: PublicLinkRuntimeIdentity, deviceName?: string, projectId?: string, runtimeHealth?: PublicLinkRuntimeHealth): Promise<{ readonly heartbeatSequence?: number }>;
+  heartbeat(serverUrl: string, credential: string, input: { sequence: number; currentTaskId?: string; identity?: PublicLinkRuntimeIdentity; runtimeHealth?: PublicLinkRuntimeHealth }): Promise<void>;
   readSnapshot(serverUrl: string, credential: string): Promise<PublicLinkCentralSnapshot>;
   registerWorkspace(serverUrl: string, credential: string, workspace: Omit<PublicLinkWorkspace, 'replicaId' | 'projectId'>, project?: { projectId: string } | { projectKey: string }): Promise<Pick<PublicLinkWorkspace, 'replicaId' | 'projectId'>>;
   claim(serverUrl: string, credential: string, leaseMs: number): Promise<PublicLinkRuntimeTask | undefined>;
@@ -42,18 +43,23 @@ export function createPublicLinkApi(fetchPort: typeof fetch = fetch, options: { 
       const worker = objectValue(response.worker, 'pair worker');
       return { credential: assertIdentifier(response.credential, 'credential'), workerId: assertIdentifier(worker.workerId, 'workerId'), deviceId: assertIdentifier(worker.deviceId, 'deviceId') };
     },
-    async register(serverUrl, credential, identity, deviceName = 'Cekai Link', projectId) {
+    async register(serverUrl, credential, identity, deviceName = 'Cekai Link', projectId, runtimeHealth) {
       requirePublicIdentity(serverUrl, identity);
       const response = objectValue(await post(serverUrl, '/api/worker/register', credential, {
         name: assertIdentifier(deviceName, 'device name'), projects: projectId === undefined ? [] : [assertIdentifier(projectId, 'projectId')],
-        capabilities: ['read-only'], ...(identity ? { runtime: identity } : {})
+        capabilities: ['read-only'], ...(identity ? { runtime: identity } : {}), ...(runtimeHealth ? { runtimeHealth } : {})
       }), 'register response');
       if (response.ok !== true) throw new Error('Central rejected Link registration');
+      const device = response.device === undefined ? undefined : objectValue(response.device, 'registered device');
+      if (device?.heartbeatSequence === undefined) return {};
+      if (!Number.isSafeInteger(device.heartbeatSequence) || Number(device.heartbeatSequence) < 0) throw new Error('Registered heartbeat sequence is invalid');
+      return { heartbeatSequence: Number(device.heartbeatSequence) };
     },
     async heartbeat(serverUrl, credential, input) {
       requirePublicIdentity(serverUrl, input.identity);
       const response = objectValue(await post(serverUrl, '/api/worker/heartbeat', credential, {
-        sequence: input.sequence, sentAt: Date.now(), ...(input.currentTaskId ? { currentTaskId: input.currentTaskId } : {}), ...(input.identity ? { runtime: input.identity } : {})
+        sequence: input.sequence, sentAt: Date.now(), ...(input.currentTaskId ? { currentTaskId: input.currentTaskId } : {}), ...(input.identity ? { runtime: input.identity } : {}),
+        ...(input.runtimeHealth ? { runtimeHealth: input.runtimeHealth } : {})
       }), 'heartbeat response');
       if (response.ok !== true) throw new Error('Central rejected Link heartbeat');
     },

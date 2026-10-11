@@ -46,6 +46,23 @@ describe('public Link Central API', () => {
       .rejects.toThrow('digest does not match');
   });
 
+  it('returns the authoritative registration sequence and forwards the existing health contract', async () => {
+    const fetchPort = vi.fn(async (_url: URL | RequestInfo, _options?: RequestInit) => new Response(JSON.stringify({
+      ok: true, device: { heartbeatSequence: 9410 }
+    }), { status: 200 }));
+    const api = createPublicLinkApi(fetchPort as typeof fetch);
+    const health = { artifactIntegrity: 'verified' as const, agentRuntime: { total: 0, active: 0, recoveryRequired: 0, resumable: 0 } };
+    await expect(api.register('http://127.0.0.1', 'credential', undefined, 'Mac', 'project', health))
+      .resolves.toEqual({ heartbeatSequence: 9410 });
+    await api.heartbeat('http://127.0.0.1', 'credential', { sequence: 9411, runtimeHealth: health });
+    for (const call of fetchPort.mock.calls) expect(JSON.parse(String(call[1]?.body)).runtimeHealth).toEqual(health);
+  });
+
+  it.each([-1, 1.5, '9410', Number.MAX_SAFE_INTEGER + 1])('rejects an invalid authoritative registration sequence (%s)', async (heartbeatSequence) => {
+    const api = createPublicLinkApi(vi.fn(async () => new Response(JSON.stringify({ ok: true, device: { heartbeatSequence } }), { status: 200 })));
+    await expect(api.register('http://127.0.0.1', 'credential')).rejects.toThrow('heartbeat sequence is invalid');
+  });
+
   it('pins redirect rejection and aborts a request that never returns', async () => {
     vi.useFakeTimers();
     const fetchPort = vi.fn((_url: URL | RequestInfo, _options?: RequestInit) => new Promise<Response>(() => {}));
