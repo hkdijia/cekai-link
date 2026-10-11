@@ -257,6 +257,9 @@ export function createPublicLinkRuntime(input: {
               catch (error) { if (!shutdown.signal.aborted) throw error; }
             }
           }
+        } catch (error) {
+          lastError = error instanceof Error ? error.message : 'public Link startup failed';
+          throw error;
         } finally {
           state = 'stopped'; currentTask = recoveryTask;
           try { await publish(); } finally { await codex.close(); }
@@ -286,8 +289,8 @@ export async function readPublicLinkRuntimeStatus(filePath = defaultPublicLinkRu
   }
 }
 
-export function readPublicLinkRuntimeIdentity(artifactRoot = process.env.CEKAI_LINK_ARTIFACT_ROOT): PublicLinkRuntimeIdentity | undefined {
-  if (process.env.CEKAI_LINK_SOURCE_PACKAGE_ROOT) return readPublicSourceRuntimeIdentity(process.env.CEKAI_LINK_SOURCE_PACKAGE_ROOT);
+export function readPublicLinkRuntimeIdentity(artifactRoot = process.env.CEKAI_LINK_ARTIFACT_ROOT, mappingPath?: string): PublicLinkRuntimeIdentity | undefined {
+  if (process.env.CEKAI_LINK_SOURCE_PACKAGE_ROOT) return readPublicSourceRuntimeIdentity(process.env.CEKAI_LINK_SOURCE_PACKAGE_ROOT, mappingPath);
   if (!artifactRoot) return undefined;
   try {
     const manifest = JSON.parse(readFileSync(`${artifactRoot}/artifact-manifest.json`, 'utf8')) as Record<string, unknown>;

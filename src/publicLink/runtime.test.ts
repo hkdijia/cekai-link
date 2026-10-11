@@ -67,6 +67,17 @@ async function verifiedPackageFixture() {
 }
 
 describe('public Link read-only runtime', () => {
+  it('retains a startup failure for inspect and releases only its own runtime lock', async () => {
+    const codex: PublicCodexRuntime = {
+      start: async () => { throw new Error('Codex app-server could not start'); }, runTurn: vi.fn(),
+      health: () => ({ state: 'failed', activeTurn: false }), close: vi.fn()
+    };
+    const { runtime, runtimePath, configStore, api } = await fixture({}, { codex });
+    await expect(runtime.serve()).rejects.toThrow('Codex app-server could not start');
+    expect(JSON.parse(await readFile(runtimePath, 'utf8'))).toMatchObject({ state: 'stopped', lastError: 'Codex app-server could not start' });
+    await expect(readFile(`${configStore.filePath}.runtime.lock`)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(api.claim).not.toHaveBeenCalled(); expect(codex.close).toHaveBeenCalledOnce();
+  });
   it('runs only a matching bound-workspace task and completes the exact answer bytes', async () => {
     const { api, codex, runtime, claimedTask } = await fixture();
     await expect(runtime.runOnce()).resolves.toBe('completed');

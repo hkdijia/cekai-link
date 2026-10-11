@@ -1,5 +1,5 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { accessSync, constants, existsSync, statSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import path from 'node:path';
 import { PUBLIC_LINK_PROFILE } from './protocol.js';
@@ -117,6 +117,23 @@ export interface PublicCodexConnection {
 export function publicCodexLaunchSpec(): { readonly executable: string; readonly args: readonly string[] } {
   const command = resolvePublicCodexCommand();
   return { executable: command.executable, args: [...command.prefixArgs, '-c', 'approval_policy="never"', 'app-server', '--stdio'] };
+}
+
+/** Locates the exact launch command without starting Codex or inspecting auth/config. */
+export function readPublicCodexInstallation(command = resolvePublicCodexCommand()): 'found' | 'missing' {
+  const executable = command.executable;
+  const directories = (process.env.PATH ?? '').split(path.delimiter).filter(Boolean);
+  const candidates = path.isAbsolute(executable) || executable.includes('/') || executable.includes('\\')
+    ? [executable]
+    : directories.flatMap((directory) => process.platform === 'win32'
+      ? [path.join(directory, executable), path.join(directory, `${executable}.exe`), path.join(directory, `${executable}.com`)]
+      : [path.join(directory, executable)]);
+  const found = candidates.some((candidate) => {
+    try { accessSync(candidate, process.platform === 'win32' ? constants.F_OK : constants.X_OK); return statSync(candidate).isFile(); }
+    catch { return false; }
+  });
+  if (!found || (command.prefixArgs[0] && !existsSync(command.prefixArgs[0]))) return 'missing';
+  return 'found';
 }
 
 export async function createPublicCodexConnection(launch = publicCodexLaunchSpec(), closeTimeoutMs = 3_000): Promise<PublicCodexConnection> {

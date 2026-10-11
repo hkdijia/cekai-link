@@ -2,11 +2,14 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SOURCE_PACKAGE_FILES, publicSourcePackageFiles, parsePublicLinkCompatibility, readPublicSourceRuntimeIdentity, verifyPublicSourcePackage } from './packageIdentity.js';
+import { createPublicLinkConfigStore } from './config.js';
+import { readPublicLinkSnapshot } from './inspect.js';
+import { createPublicLinkApi } from './api.js';
 
 const roots: string[] = [];
-afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
+afterEach(async () => { vi.unstubAllEnvs(); await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 const digest = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}` as const;
 
 async function fixture() {
@@ -38,6 +41,58 @@ async function refreshIdentity(root: string) {
 }
 
 describe('independent public source identity', () => {
+  it('prioritizes mapping then missing Codex before pairing on a clean installation', async () => {
+    const { root, scratch, mapping } = await fixture();
+    vi.stubEnv('CEKAI_LINK_SOURCE_PACKAGE_ROOT', root);
+    vi.stubEnv('CEKAI_LINK_COMPATIBILITY_PATH', '');
+    const configPath = path.join(scratch, 'config.json');
+    const read = () => readPublicLinkSnapshot({ configPath, runtimePath: path.join(scratch, 'runtime.json'), codexInstallation: () => 'missing' });
+    expect((await read()).nextAction.code).toBe('configure-compatibility');
+    const mappingPath = path.join(scratch, 'compatibility.json');
+    await writeFile(mappingPath, JSON.stringify(mapping));
+    vi.stubEnv('CEKAI_LINK_COMPATIBILITY_PATH', mappingPath);
+    expect((await read()).nextAction.code).toBe('install-codex');
+    const readyToPair = await readPublicLinkSnapshot({ configPath, runtimePath: path.join(scratch, 'runtime.json'), codexInstallation: () => 'found' });
+    expect(readyToPair.nextAction.code).toBe('pair-device');
+  });
+
+  it('uses the stored mapping in a fresh terminal, but revalidates it and honors explicit override', async () => {
+    const { root, scratch, mapping } = await fixture();
+    const mappingPath = path.join(scratch, 'compatibility.json');
+    const configPath = path.join(scratch, 'config.json');
+    vi.stubEnv('CEKAI_LINK_SOURCE_PACKAGE_ROOT', root);
+    vi.stubEnv('CEKAI_LINK_PUBLIC_CONFIG_PATH', configPath);
+    vi.stubEnv('CEKAI_LINK_COMPATIBILITY_PATH', '');
+    await writeFile(mappingPath, JSON.stringify(mapping));
+    await createPublicLinkConfigStore(configPath).save({ version: 1, serverUrl: 'http://127.0.0.1', credential: 'fixture', workerId: 'worker', deviceId: 'device', deviceName: 'fixture', compatibilityPath: mappingPath });
+    expect(readPublicSourceRuntimeIdentity(root).sourceRevision).toBe(mapping.sourceRevision);
+    const invalidOverride = path.join(scratch, 'wrong.json');
+    await writeFile(invalidOverride, JSON.stringify({ ...mapping, packageArtifactId: digest('wrong') }));
+    vi.stubEnv('CEKAI_LINK_COMPATIBILITY_PATH', invalidOverride);
+    expect(() => readPublicSourceRuntimeIdentity(root)).toThrow('does not match');
+    vi.stubEnv('CEKAI_LINK_COMPATIBILITY_PATH', '');
+    await writeFile(mappingPath, JSON.stringify({ ...mapping, packageArtifactId: digest('other') }));
+    expect(() => readPublicSourceRuntimeIdentity(root)).toThrow('does not match');
+    expect((await readPublicLinkSnapshot({ configPath, codexInstallation: () => 'found' })).nextAction.code).toBe('configure-compatibility');
+  });
+
+  it('reports a safe startup diagnosis without paths, identities, credentials or provider guesses', async () => {
+    const { root, scratch, mapping } = await fixture();
+    const mappingPath = path.join(scratch, 'compatibility.json');
+    const configPath = path.join(scratch, 'config.json'); const runtimePath = path.join(scratch, 'runtime.json');
+    vi.stubEnv('CEKAI_LINK_SOURCE_PACKAGE_ROOT', root); vi.stubEnv('CEKAI_LINK_COMPATIBILITY_PATH', mappingPath);
+    await writeFile(mappingPath, JSON.stringify(mapping));
+    await createPublicLinkConfigStore(configPath).save({ version: 1, serverUrl: 'http://127.0.0.1', credential: 'secret-fixture', workerId: 'worker', deviceId: 'device', deviceName: 'fixture', compatibilityPath: mappingPath,
+      workspace: { replicaId: 'replica', projectId: 'project', workspaceId: 'workspace', rootIdentity: digest('workspace'), rootDigest: 'root', canonicalRoot: scratch, os: 'macos', workspaceKind: 'folder' } });
+    const api = { ...createPublicLinkApi(), readSnapshot: vi.fn(async () => ({ schemaVersion: 1 as const, conversationBinding: 'active' as const, activeBindingCount: 1, registeredProjectCount: 1, centralCompatibility: 'accepted' as const, dispatchReady: true })) };
+    const read = () => readPublicLinkSnapshot({ configPath, runtimePath, api, codexInstallation: () => 'found' });
+    await writeFile(runtimePath, JSON.stringify({ state: 'stopped', sequence: 1, pid: 2_147_483_647, updatedAt: new Date().toISOString(), lastError: 'Codex app-server could not start' }));
+    expect((await read()).nextAction.code).toBe('diagnose-codex');
+    await writeFile(runtimePath, JSON.stringify({ state: 'failed', sequence: 1, pid: 2_147_483_647, updatedAt: new Date().toISOString(), lastError: `${scratch} secret-fixture provider-unknown task-private` }));
+    const snapshot = await read();
+    expect(snapshot.runtime.lastFailure).toBe('runtime-failed');
+    for (const forbidden of [scratch, 'secret-fixture', 'provider-unknown', 'task-private', 'lastError']) expect(JSON.stringify(snapshot)).not.toContain(forbidden);
+  });
   it('verifies only source/build identity without a private release manifest', async () => {
     const { root, packageArtifactId } = await fixture();
     expect(verifyPublicSourcePackage(root)).toMatchObject({ publicSourceRevision: 'a'.repeat(40), packageArtifactId });

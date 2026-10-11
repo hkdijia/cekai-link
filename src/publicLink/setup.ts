@@ -1,20 +1,38 @@
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-import { createPublicLinkApi } from './api.js';
+import { createPublicLinkApi, type PublicLinkApi } from './api.js';
 import { defaultDeviceName, currentPublicLinkOs, type PublicLinkConfigStore } from './config.js';
 import { readPublicLinkSnapshot } from './inspect.js';
 import { httpsServerUrl, type PublicLinkRuntimeIdentity } from './protocol.js';
 import { validatePublicLinkWorkspace } from './workspace.js';
+import { readPublicCodexInstallation } from './codex.js';
 
 export interface PublicLinkSetupPorts {
   readonly config: PublicLinkConfigStore;
   readonly ask: (prompt: string, secret?: boolean) => Promise<string | undefined>;
   readonly output: (value: string) => void;
   readonly identity?: PublicLinkRuntimeIdentity;
+  readonly resolveIdentity?: (mappingPath?: string) => PublicLinkRuntimeIdentity | undefined;
+  readonly codexInstallation?: () => 'found' | 'missing';
+  readonly api?: PublicLinkApi;
 }
 
 export async function runPublicLinkSetup(input: PublicLinkSetupPorts): Promise<void> {
   let config = await input.config.load();
+  const api = input.api ?? createPublicLinkApi();
+  let compatibilityPath = process.env.CEKAI_LINK_COMPATIBILITY_PATH?.trim() || config?.compatibilityPath;
+  if (process.env.CEKAI_LINK_SOURCE_PACKAGE_ROOT && !compatibilityPath) {
+    compatibilityPath = (await input.ask('部署方兼容文件绝对路径（留空退出）：'))?.trim();
+    if (!compatibilityPath) return input.output('尚未配置兼容文件；请向部署方取得匹配当前安装包的文件后重新运行 setup。');
+  }
+  const identity = input.resolveIdentity ? input.resolveIdentity(compatibilityPath) : input.identity;
+  if (config && compatibilityPath && config.compatibilityPath !== compatibilityPath) {
+    config = { ...config, compatibilityPath };
+    await input.config.save(config);
+  }
+  if ((input.codexInstallation ?? readPublicCodexInstallation)() === 'missing') {
+    return input.output('尚未找到本机 Codex CLI；请先单独安装并确认原生 Codex 问答可用，再重新运行 cekai-link setup。Link 不代装或登录 Codex。');
+  }
   if (!config) {
     const server = (await input.ask('Central HTTPS 地址（留空退出）：'))?.trim();
     if (!server) return input.output('尚未配对；下次运行 setup 可以继续。');
@@ -22,8 +40,9 @@ export async function runPublicLinkSetup(input: PublicLinkSetupPorts): Promise<v
     const code = (await input.ask('设备配对码（输入不回显，留空退出）：', true))?.trim();
     if (!code) return input.output('尚未配对；请取得有效配对码后重新运行 setup。');
     const deviceName = (await input.ask(`设备名称（默认 ${defaultDeviceName()}）：`))?.trim() || defaultDeviceName();
-    const paired = await createPublicLinkApi().pair(serverUrl, code, deviceName, input.identity);
-    config = { version: 1, serverUrl, credential: paired.credential, workerId: paired.workerId, deviceId: paired.deviceId, deviceName };
+    const paired = await api.pair(serverUrl, code, deviceName, identity);
+    config = { version: 1, serverUrl, credential: paired.credential, workerId: paired.workerId, deviceId: paired.deviceId, deviceName,
+      ...(compatibilityPath ? { compatibilityPath } : {}) };
     await input.config.save(config);
     input.output('设备配对成功。');
   }
@@ -34,7 +53,7 @@ export async function runPublicLinkSetup(input: PublicLinkSetupPorts): Promise<v
     if ((await input.ask(`确认登记此本机工作区？${workspace.canonicalRoot} [y/N]：`))?.trim().toLowerCase() !== 'y') {
       return input.output('未登记工作区；没有更改现有配置。');
     }
-    const registered = await createPublicLinkApi().registerWorkspace(config.serverUrl, config.credential, workspace);
+    const registered = await api.registerWorkspace(config.serverUrl, config.credential, workspace);
     config = { ...config, workspace: { ...workspace, ...registered } };
     await input.config.save(config);
     input.output('工作区登记成功。');

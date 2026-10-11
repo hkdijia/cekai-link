@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import path from 'node:path';
+import { storedPublicLinkCompatibilityPath } from './config.js';
 import { digestValue, objectValue, type PublicLinkDigest, type PublicLinkRuntimeIdentity } from './protocol.js';
 
 export const SOURCE_PACKAGE_FILES = [
@@ -96,19 +97,23 @@ export function parsePublicLinkCompatibility(value: unknown, packageArtifactId: 
   };
 }
 
-export function readPublicSourceRuntimeIdentity(packageRoot: string, mappingPath = process.env.CEKAI_LINK_COMPATIBILITY_PATH): PublicLinkRuntimeIdentity {
+export function readPublicSourceRuntimeIdentity(packageRoot: string, mappingPath = process.env.CEKAI_LINK_COMPATIBILITY_PATH?.trim() || storedPublicLinkCompatibilityPath()): PublicLinkRuntimeIdentity {
   const build = verifyPublicSourcePackage(packageRoot);
-  if (!mappingPath || !path.isAbsolute(mappingPath)) throw new Error('Central compatibility mapping is required; set CEKAI_LINK_COMPATIBILITY_PATH to the owner-provided absolute file');
+  if (!mappingPath || !path.isAbsolute(mappingPath)) throw new Error('Central compatibility mapping is required; run cekai-link setup to select the owner-provided absolute file');
   const relative = path.relative(packageRoot, mappingPath);
   if (relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))) {
     throw new Error('Central compatibility mapping must remain outside the public package');
   }
-  regularFile(mappingPath);
-  const canonicalRelative = path.relative(realpathSync(packageRoot), realpathSync(mappingPath));
+  let canonicalRelative: string;
+  try {
+    regularFile(mappingPath);
+    canonicalRelative = path.relative(realpathSync(packageRoot), realpathSync(mappingPath));
+  } catch { throw new Error('Central compatibility mapping could not be read; run cekai-link setup to select the owner-provided file'); }
   if (canonicalRelative === '' || (!canonicalRelative.startsWith(`..${path.sep}`) && canonicalRelative !== '..' && !path.isAbsolute(canonicalRelative))) {
     throw new Error('Central compatibility mapping must remain outside the public package');
   }
-  return parsePublicLinkCompatibility(readJson(mappingPath), build.packageArtifactId);
+  try { return parsePublicLinkCompatibility(readJson(mappingPath), build.packageArtifactId); }
+  catch { throw new Error('Central compatibility mapping is invalid or does not match this public package; ask the deployment owner for the matching file'); }
 }
 
 function readJson(file: string): unknown { regularFile(file); return JSON.parse(readFileSync(file, 'utf8')); }

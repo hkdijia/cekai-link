@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import path from 'node:path';
 
 export const PUBLIC_LINK_PROTOCOL_VERSION = 1 as const;
 export const PUBLIC_LINK_PROFILE = 'prod-readonly' as const;
@@ -26,6 +27,8 @@ export interface PublicLinkConfig {
   readonly workerId: string;
   readonly deviceId: string;
   readonly deviceName: string;
+  /** Local file reference only; never sent to Central. */
+  readonly compatibilityPath?: string;
   readonly workspace?: PublicLinkWorkspace;
 }
 
@@ -91,7 +94,7 @@ export type PublicLinkFailureReason =
 
 export function parsePublicLinkConfig(value: unknown): PublicLinkConfig {
   const record = objectValue(value, 'Link configuration');
-  assertKeys(record, ['version', 'serverUrl', 'credential', 'workerId', 'deviceId', 'deviceName', 'workspace'], 'Link configuration');
+  assertKeys(record, ['version', 'serverUrl', 'credential', 'workerId', 'deviceId', 'deviceName', 'workspace', 'compatibilityPath'], 'Link configuration');
   if (record.version !== 1) throw new Error('Link configuration version is unsupported');
   const base = {
     version: 1 as const,
@@ -99,10 +102,17 @@ export function parsePublicLinkConfig(value: unknown): PublicLinkConfig {
     credential: stringValue(record.credential, 'credential'),
     workerId: stringValue(record.workerId, 'workerId'),
     deviceId: stringValue(record.deviceId, 'deviceId'),
-    deviceName: stringValue(record.deviceName, 'deviceName')
+    deviceName: stringValue(record.deviceName, 'deviceName'),
+    ...(record.compatibilityPath === undefined ? {} : { compatibilityPath: absoluteLocalPath(record.compatibilityPath) })
   };
   if (record.workspace === undefined) return base;
   return { ...base, workspace: parseWorkspace(record.workspace) };
+}
+
+function absoluteLocalPath(value: unknown): string {
+  const result = stringValue(value, 'compatibilityPath');
+  if (!path.isAbsolute(result)) throw new Error('compatibilityPath is invalid');
+  return result;
 }
 
 export function parseWorkspace(value: unknown): PublicLinkWorkspace {

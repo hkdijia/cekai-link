@@ -1,4 +1,5 @@
 import { chmod, mkdir, open, readFile, rename, rm } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { homedir, hostname, platform } from 'node:os';
 import path from 'node:path';
 import { parsePublicLinkConfig, type PublicLinkConfig, type PublicLinkOs } from './protocol.js';
@@ -80,6 +81,15 @@ export function createPublicLinkConfigStore(filePath = defaultPublicLinkConfigPa
       }
     }
   };
+}
+
+/** The synchronous package entry reads the same config as setup/inspect. */
+export function storedPublicLinkCompatibilityPath(filePath = defaultPublicLinkConfigPath()): string | undefined {
+  try { return parsePublicLinkConfig(JSON.parse(readFileSync(filePath, 'utf8'))).compatibilityPath; }
+  catch (error) {
+    if (isCode(error, 'ENOENT')) return undefined;
+    throw new Error('Public Link configuration is invalid');
+  }
 }
 
 export function defaultDeviceName(): string {

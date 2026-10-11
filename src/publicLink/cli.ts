@@ -37,16 +37,18 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     process.stdout.write(command.json ? `${JSON.stringify(snapshot)}\n` : formatSnapshot(snapshot));
     return;
   }
-  const identity = readPublicLinkRuntimeIdentity();
   if (command.command === 'setup') {
-    await runPublicLinkSetup({ config, identity, ask: askPublicLinkQuestion, output: (value) => process.stdout.write(`${value}\n`) });
+    await runPublicLinkSetup({ config, resolveIdentity: (mappingPath) => readPublicLinkRuntimeIdentity(undefined, mappingPath),
+      ask: askPublicLinkQuestion, output: (value) => process.stdout.write(`${value}\n`) });
     return;
   }
+  const identity = readPublicLinkRuntimeIdentity();
   if (command.command === 'pair') {
     const existing = await config.load();
     const code = command.stdinCode ? await readPairingCodeFromStdin() : await askPublicLinkQuestion('设备配对码（输入不回显）：', true);
     const paired = await createPublicLinkApi().pair(command.serverUrl, assertIdentifier(code?.trim(), 'pairing code'), existing?.deviceName ?? 'Cekai Link device', identity);
-    await config.save({ version: 1, serverUrl: command.serverUrl, credential: paired.credential, workerId: paired.workerId, deviceId: paired.deviceId, deviceName: existing?.deviceName ?? 'Cekai Link device', ...(existing?.workspace ? { workspace: existing.workspace } : {}) });
+    const compatibilityPath = process.env.CEKAI_LINK_COMPATIBILITY_PATH?.trim() || existing?.compatibilityPath;
+    await config.save({ version: 1, serverUrl: command.serverUrl, credential: paired.credential, workerId: paired.workerId, deviceId: paired.deviceId, deviceName: existing?.deviceName ?? 'Cekai Link device', ...(existing?.workspace ? { workspace: existing.workspace } : {}), ...(compatibilityPath ? { compatibilityPath } : {}) });
     process.stdout.write(JSON.stringify({ ok: true, paired: true, workerId: paired.workerId, deviceId: paired.deviceId }) + '\n');
     return;
   }

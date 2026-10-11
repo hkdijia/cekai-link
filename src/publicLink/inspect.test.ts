@@ -6,6 +6,7 @@ import path from 'node:path';
 import { readPublicLinkSnapshot } from './inspect.js';
 import { createPublicLinkConfigStore, defaultPublicLinkConfigPath, defaultPublicLinkRuntimePath } from './config.js';
 import { createPublicLinkApi } from './api.js';
+import type { PublicLinkCentralSnapshot } from './protocol.js';
 
 const roots: string[] = [];
 afterEach(async () => { vi.unstubAllEnvs(); await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
@@ -46,7 +47,7 @@ describe('public Link inspect', () => {
     const treeDigest = hash([0, 1]);
     await writeFile(path.join(root, 'artifact-manifest.json'), JSON.stringify({ releaseId, revision, files, entryRelativePath: files[0], entryDigest: hash([0]), treeDigest,
       artifactId: `sha256:${createHash('sha256').update(revision).update('\0').update(treeDigest).digest('hex')}` }));
-    const api = { ...createPublicLinkApi(), readSnapshot: vi.fn(async () => ({ schemaVersion: 1 as const, conversationBinding: 'active' as const, activeBindingCount: 1, registeredProjectCount: 1, centralCompatibility: 'accepted' as const, dispatchReady: true })) };
+    const api = { ...createPublicLinkApi(), readSnapshot: vi.fn(async (): Promise<PublicLinkCentralSnapshot> => ({ schemaVersion: 1, conversationBinding: 'active', activeBindingCount: 1, registeredProjectCount: 1, centralCompatibility: 'accepted', dispatchReady: true })) };
     const read = () => readPublicLinkSnapshot({ configPath, runtimePath, artifactRoot: root, api });
     const publish = (pid: number, updatedAt: string) => writeFile(runtimePath, JSON.stringify({ state: 'running', sequence: 1, pid, updatedAt }));
     await publish(process.pid, new Date().toISOString());
@@ -59,5 +60,18 @@ describe('public Link inspect', () => {
     }
     await publish(2_147_483_647, new Date().toISOString());
     expect((await read()).overall).toBe('offline');
+    api.readSnapshot.mockResolvedValueOnce({ schemaVersion: 1, conversationBinding: 'active', activeBindingCount: 1,
+      registeredProjectCount: 1, centralCompatibility: 'incompatible', dispatchReady: false });
+    expect((await read()).nextAction.code).toBe('diagnose-central');
+    api.readSnapshot.mockRejectedValueOnce(new Error('credential=synthetic-secret'));
+    await publish(process.pid, new Date().toISOString());
+    const unavailable = await read();
+    expect(unavailable).toMatchObject({ overall: 'degraded', sources: { central: 'unavailable' }, nextAction: { code: 'retry-central-inspection' } });
+    expect(JSON.stringify(unavailable)).not.toContain('synthetic-secret');
+    await writeFile(runtimePath, JSON.stringify({ state: 'stopped', sequence: 1, pid: 2_147_483_647,
+      currentTask: 'private-interrupted-task', updatedAt: new Date().toISOString() }));
+    const recovery = await read();
+    expect(recovery.nextAction.code).toBe('resolve-recovery');
+    expect(JSON.stringify(recovery)).not.toContain('private-interrupted-task');
   });
 });

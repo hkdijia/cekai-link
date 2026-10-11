@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createPublicCodexConnection, createPublicCodexRuntime, type PublicCodexConnection } from './codex.js';
+import { createPublicCodexConnection, createPublicCodexRuntime, readPublicCodexInstallation, type PublicCodexConnection } from './codex.js';
 
 function connectionFixture(options: { deferTurnStart?: boolean; emitBeforeTurnStartResponse?: boolean } = {}) {
   const calls: Array<{ method: string; params: any }> = [];
@@ -36,6 +36,11 @@ function connectionFixture(options: { deferTurnStart?: boolean; emitBeforeTurnSt
 }
 
 describe('public Link Codex adapter', () => {
+  it('checks the exact executable and Node launcher without starting a model or reading auth', () => {
+    expect(readPublicCodexInstallation({ executable: process.execPath, prefixArgs: [] })).toBe('found');
+    expect(readPublicCodexInstallation({ executable: process.execPath, prefixArgs: ['missing-codex-launcher-fixture.js'] })).toBe('missing');
+    expect(readPublicCodexInstallation({ executable: 'missing-codex-fixture-command', prefixArgs: [] })).toBe('missing');
+  });
   it('pins read-only sandbox and never-approval while forwarding the question unchanged', async () => {
     const fixture = connectionFixture();
     const runtime = createPublicCodexRuntime({ connect: vi.fn(async () => fixture.connection) });
