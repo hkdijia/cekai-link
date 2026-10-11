@@ -17,7 +17,7 @@ import {
 
 export interface PublicLinkApi {
   pair(serverUrl: string, code: string, deviceName: string, identity?: PublicLinkRuntimeIdentity): Promise<Pick<PublicLinkConfig, 'credential' | 'workerId' | 'deviceId'>>;
-  register(serverUrl: string, credential: string, identity?: PublicLinkRuntimeIdentity, deviceName?: string): Promise<void>;
+  register(serverUrl: string, credential: string, identity?: PublicLinkRuntimeIdentity, deviceName?: string, projectId?: string): Promise<void>;
   heartbeat(serverUrl: string, credential: string, input: { sequence: number; currentTaskId?: string; identity?: PublicLinkRuntimeIdentity }): Promise<void>;
   readSnapshot(serverUrl: string, credential: string): Promise<PublicLinkCentralSnapshot>;
   registerWorkspace(serverUrl: string, credential: string, workspace: Omit<PublicLinkWorkspace, 'replicaId' | 'projectId'>, project?: { projectId: string } | { projectKey: string }): Promise<Pick<PublicLinkWorkspace, 'replicaId' | 'projectId'>>;
@@ -42,10 +42,11 @@ export function createPublicLinkApi(fetchPort: typeof fetch = fetch, options: { 
       const worker = objectValue(response.worker, 'pair worker');
       return { credential: assertIdentifier(response.credential, 'credential'), workerId: assertIdentifier(worker.workerId, 'workerId'), deviceId: assertIdentifier(worker.deviceId, 'deviceId') };
     },
-    async register(serverUrl, credential, identity, deviceName = 'Cekai Link') {
+    async register(serverUrl, credential, identity, deviceName = 'Cekai Link', projectId) {
       requirePublicIdentity(serverUrl, identity);
       const response = objectValue(await post(serverUrl, '/api/worker/register', credential, {
-        name: assertIdentifier(deviceName, 'device name'), projects: [], capabilities: ['read-only'], ...(identity ? { runtime: identity } : {})
+        name: assertIdentifier(deviceName, 'device name'), projects: projectId === undefined ? [] : [assertIdentifier(projectId, 'projectId')],
+        capabilities: ['read-only'], ...(identity ? { runtime: identity } : {})
       }), 'register response');
       if (response.ok !== true) throw new Error('Central rejected Link registration');
     },

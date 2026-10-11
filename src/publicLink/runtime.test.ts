@@ -49,9 +49,20 @@ describe('public Link read-only runtime', () => {
   it('runs only a matching bound-workspace task and completes the exact answer bytes', async () => {
     const { api, codex, runtime, claimedTask } = await fixture();
     await expect(runtime.runOnce()).resolves.toBe('completed');
+    expect(api.register).toHaveBeenCalledWith(config.serverUrl, config.credential, undefined, config.deviceName, config.workspace!.projectId);
     expect(codex.runTurn).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/tmp/workspace', request: 'question' }));
     expect(api.complete).toHaveBeenCalledWith(config.serverUrl, config.credential, claimedTask, Uint8Array.from(Buffer.from('answer')));
     expect(api.fail).not.toHaveBeenCalled();
+  });
+
+  it('preserves the registered project declaration across consecutive polling passes', async () => {
+    const { api, runtime } = await fixture({ claim: vi.fn(async () => undefined) });
+    await expect(runtime.runOnce()).resolves.toBe('no-task');
+    await expect(runtime.runOnce()).resolves.toBe('no-task');
+    expect(api.register).toHaveBeenCalledTimes(2);
+    for (const call of vi.mocked(api.register).mock.calls) {
+      expect(call).toEqual([config.serverUrl, config.credential, undefined, config.deviceName, config.workspace!.projectId]);
+    }
   });
 
   it('fails a mismatched Central target closed without invoking Codex', async () => {

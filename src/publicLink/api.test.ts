@@ -12,7 +12,7 @@ describe('public Link Central API', () => {
     const api = createPublicLinkApi(fetchPort as typeof fetch);
     await api.pair('http://127.0.0.1', 'pairing-code', 'Mac');
     const body = JSON.parse(String(fetchPort.mock.calls[0]?.[1]?.body));
-    expect(body).toMatchObject({ capabilities: ['read-only'], code: 'pairing-code' });
+    expect(body).toMatchObject({ projects: [], capabilities: ['read-only'], code: 'pairing-code' });
     expect(JSON.stringify(body)).not.toMatch(/workspace-write|integration|mcp/i);
   });
 
@@ -22,6 +22,17 @@ describe('public Link Central API', () => {
     await expect(api.pair('https://central.example.test', 'code', 'Mac')).rejects.toThrow('exact package');
     await expect(api.register('https://central.example.test', 'credential')).rejects.toThrow('exact package');
     expect(fetchPort).not.toHaveBeenCalled();
+  });
+
+  it('declares only the registered workspace project while keeping pairing unscoped', async () => {
+    const fetchPort = vi.fn(async (_input: URL | RequestInfo, _init?: RequestInit) => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const api = createPublicLinkApi(fetchPort as typeof fetch);
+    await api.register('http://127.0.0.1', 'credential', undefined, 'Mac', 'registered-project');
+    const body = JSON.parse(String(fetchPort.mock.calls[0]?.[1]?.body));
+    expect(body).toEqual({ name: 'Mac', projects: ['registered-project'], capabilities: ['read-only'] });
+    await expect(api.register('http://127.0.0.1', 'credential', undefined, 'Mac', '../unregistered'))
+      .rejects.toThrow('projectId is invalid');
+    expect(fetchPort).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a task whose request bytes do not match Central digest', async () => {

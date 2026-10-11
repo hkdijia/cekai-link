@@ -134,7 +134,7 @@ export function createPublicLinkRuntime(input: {
     if (!workspace) throw new Error('Cekai Link has no registered workspace; run setup first');
     signal?.throwIfAborted();
     state = 'starting'; lastError = undefined; await publish();
-    await api.register(config.serverUrl, config.credential, input.identity, config.deviceName);
+    await api.register(config.serverUrl, config.credential, input.identity, config.deviceName, workspace.projectId);
     await heartbeat(config);
     state = 'running'; await publish();
     const task = await api.claim(config.serverUrl, config.credential, leaseMs);
