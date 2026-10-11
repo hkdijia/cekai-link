@@ -5,11 +5,13 @@ The standalone client is open source under Apache-2.0. Central is a separate ser
 
 ## Install and first use
 
-The published baseline is `@cekaitech/cekai-link@0.1.0`:
+This source defines `@cekaitech/cekai-link@0.1.1`. Check with your deployment owner that the registry version is available and approved before installing it:
 
 ```sh
-npm install --global --ignore-scripts @cekaitech/cekai-link@0.1.0
+npm install --global --ignore-scripts @cekaitech/cekai-link@0.1.1
 ```
+
+Before registry publication, use the deployment owner's reviewed `cekaitech-cekai-link-0.1.1.tgz` instead of the registry name. Check its SHA256 against the owner's delivery record, then install that same file with `npm install --global --ignore-scripts /absolute/path/to/cekaitech-cekai-link-0.1.1.tgz`. Installing a package does not grant Central admission.
 
 Use `npm.cmd` and `cekai-link.cmd` in Windows PowerShell. You do not need to change your global execution policy.
 
@@ -21,10 +23,9 @@ Before setup you need:
 
 Run `cekai-link setup`, then `cekai-link run` in the foreground. Follow the next action from `cekai-link inspect`; explicitly bind the target conversation before asking questions. Natural-language questions do not require `/agent`. Keep the foreground terminal open; Ctrl+C stops only this Link. There is no automatic service or update.
 
-**Published 0.1.0:** set `CEKAI_LINK_COMPATIBILITY_PATH` to the owner's absolute compatibility-file path in each terminal before setup/run. For example, in macOS/Linux:
+**0.1.1:** setup asks for the compatibility-file path first, validates it before collecting a pairing code, and saves the path in the existing local config after pairing. Subsequent terminals use that path without an environment variable:
 
 ```sh
-export CEKAI_LINK_COMPATIBILITY_PATH="/absolute/path/from-owner/compatibility.json"
 cekai-link setup
 cekai-link run
 ```
@@ -32,12 +33,19 @@ cekai-link run
 In Windows PowerShell:
 
 ```powershell
-$env:CEKAI_LINK_COMPATIBILITY_PATH = 'C:\absolute\path\from-owner\compatibility.json'
 cekai-link.cmd setup
 cekai-link.cmd run
 ```
 
-**Current source, not yet published:** setup asks for the compatibility-file path first, validates it before collecting a pairing code, and saves the path in the existing local config after pairing. Subsequent terminals use that path without the variable. An explicit environment override wins and is revalidated; an invalid override never silently falls back. Executable detection proves Codex is located, not that account/model access works. Back up your local config before trying this source: old 0.1.0 cannot read the new optional `compatibilityPath` field; restore the old config when rolling back. Do not point a source test at a running Link's config.
+An explicit `CEKAI_LINK_COMPATIBILITY_PATH` override wins and is revalidated; an invalid override never silently falls back. Executable detection proves Codex is located, not that account/model access works.
+
+## 0.1.1 changes and upgrade
+
+Setup and inspect now agree on prerequisites, save a validated compatibility-file path once, and distinguish missing Codex, connectivity/admission failures and interrupted tasks. Pairing and workspace registration still do not bind a robot conversation automatically. No service, automatic update or additional write capability is introduced.
+
+For an existing 0.1.0 installation, follow the deployment owner's coordinated upgrade window. Stop your own foreground Link normally while idle, keep a private backup of its config and the original package/mapping, then install 0.1.1 in the same owned namespace. Obtain a mapping for the exact new package and Central release. Change or remove any old `CEKAI_LINK_COMPATIBILITY_PATH` override before setup; setup can then save the new path without pairing or workspace registration again. Never use a running Link's config for testing.
+
+**Rollback:** old 0.1.0 cannot read the new optional `compatibilityPath` field. Restore the upgrade-time config backup, original 0.1.0 package and its matching mapping. Published 0.1.0 still requires `CEKAI_LINK_COMPATIBILITY_PATH` in each terminal. Central must also approve that original package for its active release; downgrading only the npm package is insufficient. Keep current runtime facts and heartbeat sequence; do not restore stale runtime files or remove locks/tasks to force recovery.
 
 ## Diagnose and recover
 
