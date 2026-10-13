@@ -99,6 +99,18 @@ describe('public Link read-only runtime', () => {
     }
   });
 
+  it('keeps a healthy idle runtime running while the next registration is pending', async () => {
+    const published: PublicLinkRuntimeStatus[] = [];
+    const registrationStates: string[] = [];
+    const { runtime } = await fixture({
+      claim: vi.fn(async () => undefined),
+      register: vi.fn(async () => { registrationStates.push(published.at(-1)!.state); return {}; })
+    }, { publishStatus: async value => { published.push(value); } });
+    await runtime.runOnce();
+    await runtime.runOnce();
+    expect(registrationStates).toEqual(['starting', 'running']);
+  });
+
   it('loads the persisted sequence before the first runOnce publication', async () => {
     const published: PublicLinkRuntimeStatus[] = [];
     const { api, runtime, runtimePath } = await fixture({ claim: vi.fn(async () => undefined) }, {

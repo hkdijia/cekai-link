@@ -158,7 +158,9 @@ export function createPublicLinkRuntime(input: {
     if (!workspace) throw new Error('Cekai Link has no registered workspace; run setup first');
     signal?.throwIfAborted();
     await loadSequence();
-    state = 'starting'; lastError = undefined; await publish();
+    // Registration is refreshed on each poll; it is not a new process startup.
+    if (state !== 'running') state = 'starting';
+    lastError = undefined; await publish();
     const health = runtimeHealth();
     if (health.artifactIntegrity === 'invalid') throw new Error('Public Link package integrity is invalid');
     const registered = await api.register(config.serverUrl, config.credential, input.identity, config.deviceName, workspace.projectId, health);

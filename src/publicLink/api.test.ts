@@ -87,6 +87,17 @@ describe('public Link Central API', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('rejects an already canceled request without fetching or leaving an unhandled rejection', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController(); controller.abort();
+    const fetchPort = vi.fn();
+    await expect(createPublicLinkApi(fetchPort, { signal: controller.signal }).pair('http://127.0.0.1', 'fixture-code', 'device'))
+      .rejects.toThrow('Central request canceled');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchPort).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('times out a hung response body and ignores unsafe error codes', async () => {
     vi.useFakeTimers();
     const response = new Response('{}');

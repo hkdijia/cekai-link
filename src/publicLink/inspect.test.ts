@@ -73,5 +73,9 @@ describe('public Link inspect', () => {
     const recovery = await read();
     expect(recovery.nextAction.code).toBe('resolve-recovery');
     expect(JSON.stringify(recovery)).not.toContain('private-interrupted-task');
+    await writeFile(runtimePath, 'corrupt-runtime-synthetic-secret');
+    const invalidRuntime = await read();
+    expect(invalidRuntime).toMatchObject({ overall: 'unavailable', nextAction: { code: 'repair-local-configuration' } });
+    expect(JSON.stringify(invalidRuntime)).not.toContain('corrupt-runtime-synthetic-secret');
   });
 });

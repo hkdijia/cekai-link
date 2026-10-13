@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createPublicLinkApi } from './api.js';
 import { readPublicCodexInstallation } from './codex.js';
 import { createPublicLinkConfigStore, defaultPublicLinkRuntimePath } from './config.js';
-import { readPublicLinkRuntimeStatus } from './runtime.js';
+import { readPublicLinkRuntimeStatus, type PublicLinkRuntimeStatus } from './runtime.js';
 import { verifyPublicSourcePackage, readPublicSourceRuntimeIdentity } from './packageIdentity.js';
 import { digestValue, type PublicLinkCentralSnapshot, type PublicLinkConfig } from './protocol.js';
 
@@ -57,7 +57,10 @@ export async function readPublicLinkSnapshot(input: {
   try { config = await store.load(); } catch { localConfiguration = 'invalid'; }
   const artifact = await readArtifactState(input.artifactRoot, process.env.CEKAI_LINK_COMPATIBILITY_PATH?.trim() || config?.compatibilityPath || '');
   const codexInstallation = artifact.source ? (input.codexInstallation ?? readPublicCodexInstallation)() : 'unknown';
-  const runtime = await readRuntime(input.runtimePath);
+  let runtime: PublicLinkRuntimeStatus | undefined;
+  let runtimeInvalid = false;
+  try { runtime = await readPublicLinkRuntimeStatus(input.runtimePath ?? defaultPublicLinkRuntimePath()); }
+  catch { runtimeInvalid = true; }
   let central: PublicLinkCentralSnapshot | undefined;
   if (config) {
     try { central = await (input.api ?? createPublicLinkApi()).readSnapshot(config.serverUrl, config.credential); } catch { central = undefined; }
@@ -73,7 +76,7 @@ export async function readPublicLinkSnapshot(input: {
   const centralDispatchReady = central?.dispatchReady ?? null;
   const lastFailure = classifyRuntimeFailure(runtime?.lastError);
   const recoveryPending = Boolean(runtime?.currentTask && !alive);
-  const next = selectNext({ localConfiguration, pairing, workspaceRegistration, launcher, heartbeat, artifact, central, centralCompatibility, centralDispatchReady, codexInstallation, lastFailure, recoveryPending });
+  const next = selectNext({ localConfiguration, runtimeInvalid, pairing, workspaceRegistration, launcher, heartbeat, artifact, central, centralCompatibility, centralDispatchReady, codexInstallation, lastFailure, recoveryPending });
   return {
     schemaVersion: 1, overall: next.overall,
     setup: { installation: 'installed', pairing, workspaceRegistration, conversationBinding: central?.conversationBinding ?? 'unavailable' },
@@ -131,19 +134,16 @@ async function readArtifactState(root = process.env.CEKAI_LINK_ARTIFACT_ROOT, ma
   } catch { return { mode: 'invalid', integrity: 'invalid' }; }
 }
 
-async function readRuntime(runtimePath?: string) {
-  try { return await readPublicLinkRuntimeStatus(runtimePath ?? defaultPublicLinkRuntimePath()); }
-  catch { return undefined; }
-}
-
 function selectNext(input: {
   localConfiguration: PublicLinkSnapshot['sources']['localConfiguration'];
+  runtimeInvalid: boolean;
   pairing: PublicLinkSnapshot['setup']['pairing']; workspaceRegistration: PublicLinkSnapshot['setup']['workspaceRegistration']; launcher: PublicLinkSnapshot['runtime']['launcher'];
   heartbeat: PublicLinkSnapshot['runtime']['heartbeat'];
   artifact: { mode: string; integrity: string; source?: { mapping: 'available' | 'unavailable' } }; central?: PublicLinkCentralSnapshot; centralCompatibility: PublicLinkSnapshot['release']['centralCompatibility']; centralDispatchReady: boolean | null;
   codexInstallation: PublicLinkSnapshot['runtime']['codexInstallation']; lastFailure: PublicLinkRuntimeFailure | null; recoveryPending: boolean;
 }): { overall: PublicLinkOverall; action: PublicLinkSnapshot['nextAction'] } {
   if (input.localConfiguration === 'invalid') return decision('unavailable', 'repair-local-configuration', '修复本机 Link 配置', '配置无法读取；先核对本机配置文件，不重复配对或删除运行锁。');
+  if (input.runtimeInvalid) return decision('unavailable', 'repair-local-configuration', '核对本机 Link 运行状态文件', '运行状态无法读取，不能确认上次任务或心跳序号；保留状态和锁，先核对进程归属与 Central 终态，不直接重新启动。');
   if (input.artifact.integrity === 'invalid') return decision('degraded', 'retry-central-inspection', '核对 Link 安装包', '安装包完整性未通过，先使用可信来源的完整安装包。');
   if (input.artifact.source?.mapping === 'unavailable') return decision('setup-required', 'configure-compatibility', '运行 cekai-link setup，登记兼容文件', '尚无匹配当前安装包的可用兼容文件；向部署方取得正确文件，setup 会验证并保存其路径。');
   if (input.codexInstallation === 'missing') return decision('setup-required', 'install-codex', '先安装并验证本机 Codex CLI', '未找到 Link 要启动的 Codex 命令；先确认原生 Codex 问答可用，再运行 cekai-link setup。');

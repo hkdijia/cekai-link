@@ -141,14 +141,14 @@ async function request(fetchPort: typeof fetch, serverUrl: string, pathname: str
   if (options.signal?.aborted) stop();
   const timer = setTimeout(() => controller.abort(new Error('Central request timed out')), timeoutMs);
   let removeAbort = () => {};
-  const aborted = new Promise<never>((_, reject) => {
-    const rejectAbort = () => reject(controller.signal.reason);
-    removeAbort = () => controller.signal.removeEventListener('abort', rejectAbort);
-    controller.signal.addEventListener('abort', rejectAbort, { once: true });
-    if (controller.signal.aborted) rejectAbort();
-  });
   try {
     controller.signal.throwIfAborted();
+    const aborted = new Promise<never>((_, reject) => {
+      const rejectAbort = () => reject(controller.signal.reason);
+      removeAbort = () => controller.signal.removeEventListener('abort', rejectAbort);
+      controller.signal.addEventListener('abort', rejectAbort, { once: true });
+      if (controller.signal.aborted) rejectAbort();
+    });
     return await Promise.race([readResponse(fetchPort, url, pathname, method, credential, body, controller.signal), aborted]);
   } finally {
     clearTimeout(timer); removeAbort(); options.signal?.removeEventListener('abort', stop);
