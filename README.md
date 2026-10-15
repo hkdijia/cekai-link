@@ -7,7 +7,7 @@ The standalone client is open source under Apache-2.0. Central is a separate ser
 
 ## 中文接入指引
 
-`@cekaitech/cekai-link@0.1.1` 已公开发行。无需 clone 仓库，Mac、Windows、Linux 使用同一个 Node.js 包。已正常运行 0.1.1 的用户继续使用即可，不需要重新安装或配对。
+本源码对应 `@cekaitech/cekai-link@0.1.2`。以下 npm 安装命令须在该版本公开发行、且部署方确认 Central 已批准精确包后使用；发行前仅使用部署方核对过的同字节 tarball 隔离验收。已正常运行 0.1.1 的用户继续使用原包，等待部署方安排升级，不需要重新配对。无需 clone 仓库，Mac、Windows、Linux 使用同一个 Node.js 包。
 
 ### 1. 安装前准备
 
@@ -30,14 +30,14 @@ codex --version
 Mac / Linux 使用当前用户可写的 npm global prefix，不为 Link 修改系统目录权限：
 
 ```sh
-npm install --global --ignore-scripts @cekaitech/cekai-link@0.1.1
+npm install --global --ignore-scripts @cekaitech/cekai-link@0.1.2
 cekai-link setup
 ```
 
 Windows 在普通用户 PowerShell 使用 `.cmd`，无需修改全局执行策略：
 
 ```powershell
-npm.cmd install --global --ignore-scripts @cekaitech/cekai-link@0.1.1
+npm.cmd install --global --ignore-scripts @cekaitech/cekai-link@0.1.2
 cekai-link.cmd setup
 ```
 
@@ -70,8 +70,9 @@ Ctrl+C 正常停止当前前台 Link，配置和登记保留。确认旧进程�
 | `start-link` | 确认原进程已退出且无待恢复任务，再前台 run |
 | `diagnose-central` / `retry-central-inspection` | 保留配对，核对网络和部署方准入，重新 inspect |
 | `resolve-recovery` 或原进程持锁 | 先核对进程归属与执行、投递终态，不删锁或盲目重复任务 |
+| `repair-local-configuration` | 保留配置、运行状态和锁，先核对文件与进程归属；状态损坏时确认 Central 终态后再恢复 |
 
-显式 `CEKAI_LINK_COMPATIBILITY_PATH` 优先于已保存路径，错误覆盖不会自动回退。升级需与部署方协调；回退 0.1.0 必须恢复升级前配置、原包、匹配兼容文件及 Central 准入，不能只降 npm 版本。旧 0.1.0 不能读取含新增 `compatibilityPath` 字段的新配置；不要恢复陈旧 runtime 或心跳序号。详见 [升级与回退](#011-changes-and-upgrade)。
+显式 `CEKAI_LINK_COMPATIBILITY_PATH` 优先于已保存路径，错误覆盖不会自动回退。0.1.1 → 0.1.2 沿用配置格式，setup 更新匹配兼容文件路径，保留配对和工作区；回退需恢复升级前配置、原包、匹配文件及 Central 准入。旧 0.1.0 不能读取含新增 `compatibilityPath` 字段的新配置；不要恢复陈旧 runtime 或心跳序号。详见 [升级与回退](#012-changes-and-upgrade)。
 
 反馈实际失败时，只提供发生时间（含时区）、安装版本、可见错误类别、是否收到最终回执，以及 inspect 的状态和下一步。不发送配对码、配置文件、凭据、工作目录、问题或回答正文、原始日志。
 
@@ -83,13 +84,13 @@ Link 固定绑定工作目录、`sandbox=read-only` 和 `approval_policy=never`�
 
 ## Install and first use
 
-`@cekaitech/cekai-link@0.1.1` is published. Confirm that your deployment owner has approved the exact package for their Central before installing it:
+This source defines `@cekaitech/cekai-link@0.1.2`. Use the registry command below only after this version is published and your deployment owner confirms exact Central admission. Before publication, use only an owner-reviewed tarball for isolated acceptance. Existing 0.1.1 users should keep their original package until the coordinated upgrade window:
 
 ```sh
-npm install --global --ignore-scripts @cekaitech/cekai-link@0.1.1
+npm install --global --ignore-scripts @cekaitech/cekai-link@0.1.2
 ```
 
-For owner-arranged offline delivery, use the owner's reviewed `cekaitech-cekai-link-0.1.1.tgz` and check its SHA256 against the delivery record before installing that same file with `npm install --global --ignore-scripts /absolute/path/to/cekaitech-cekai-link-0.1.1.tgz`. Installing a package does not grant Central admission.
+For owner-arranged offline delivery, use the owner's reviewed `cekaitech-cekai-link-0.1.2.tgz` and check its SHA256 against the delivery record before installing that same file with `npm install --global --ignore-scripts /absolute/path/to/cekaitech-cekai-link-0.1.2.tgz`. Installing a package does not grant Central admission.
 
 Use `npm.cmd` and `cekai-link.cmd` in Windows PowerShell. You do not need to change your global execution policy.
 
@@ -116,6 +117,14 @@ cekai-link.cmd run
 ```
 
 An explicit `CEKAI_LINK_COMPATIBILITY_PATH` override wins and is revalidated; an invalid override never silently falls back. Executable detection proves Codex is located, not that account/model access works.
+
+## 0.1.2 changes and upgrade
+
+Healthy polling preserves the running state instead of briefly reporting startup again. Inspect distinguishes a missing runtime file from a damaged one; damaged state requires inspection of process ownership and Central task/receipt facts before recovery. Stopping a task with an already-canceled Central request no longer leaves an unhandled promise rejection. Interrupted or unacknowledged tasks remain blocked for recovery rather than being executed again. No Codex prompt, personal configuration, permission or write capability changes are introduced.
+
+**Upgrade from 0.1.1:** the config format is unchanged. In the deployment owner's coordinated window, confirm idle/no pending recovery, stop only your foreground Link normally and keep the original 0.1.1 tarball, matching mapping and a complete config backup. Install the exact 0.1.2 package, obtain its approved mapping and rerun setup to save that path. Pairing, workspace registration and explicit conversation binding are retained. Clear stale mapping environment overrides; a new terminal must pass inspect without one.
+
+**Rollback to 0.1.1:** restore the original 0.1.1 package, its mapping, the upgrade-time config backup and matching Central approval. The older parser accepts the shared config format, but a mapping for 0.1.2 still cannot authorize 0.1.1. Keep the latest runtime and heartbeat sequence; never restore stale task state or remove locks to make an upgrade pass. Earlier 0.1.0 recovery remains documented below.
 
 ## 0.1.1 changes and upgrade
 
