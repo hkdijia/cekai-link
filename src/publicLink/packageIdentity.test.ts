@@ -31,9 +31,8 @@ async function fixture() {
   return { root, scratch, mapping, packageArtifactId };
 }
 
-async function refreshIdentity(root: string) {
+async function refreshIdentity(root: string, files = publicSourcePackageFiles(root)) {
   const previous = JSON.parse(await readFile(path.join(root, 'link-build.json'), 'utf8'));
-  const files = publicSourcePackageFiles(root);
   const hash = createHash('sha256');
   for (const file of files) hash.update(file).update('\0').update(await readFile(path.join(root, file))).update('\0');
   const descriptor = { schemaVersion: 1, packageVersion: previous.packageVersion, publicSourceRevision: previous.publicSourceRevision, sourceDigest: previous.sourceDigest, treeDigest: `sha256:${hash.digest('hex')}` };
@@ -41,6 +40,21 @@ async function refreshIdentity(root: string) {
 }
 
 describe('independent public source identity', () => {
+  it('retains the exact previous format for inspection without weakening current client startup or content checks', async () => {
+    const { root } = await fixture();
+    const compatibilityModule = path.join(root, 'dist/publicLink/compatibility.js');
+    await rm(compatibilityModule);
+    await refreshIdentity(root, SOURCE_PACKAGE_FILES.filter(file => file !== 'dist/publicLink/compatibility.js'));
+    const previous = JSON.parse(await readFile(path.join(root, 'link-build.json'), 'utf8'));
+    expect(() => verifyPublicSourcePackage(root)).toThrow('identity is invalid');
+    expect(verifyPublicSourcePackage(root, { allowPreviousInventory: true }).packageArtifactId).toBe(previous.packageArtifactId);
+    await writeFile(path.join(root, 'dist/publicLink/api.js'), 'tampered');
+    expect(() => verifyPublicSourcePackage(root, { allowPreviousInventory: true })).toThrow('runtime digest');
+    await writeFile(path.join(root, 'dist/publicLink/api.js'), 'fixture\n');
+    await writeFile(compatibilityModule, 'unreviewed module');
+    expect(() => verifyPublicSourcePackage(root, { allowPreviousInventory: true })).toThrow('unreviewed runtime files');
+  });
+
   it('prioritizes mapping then missing Codex before pairing on a clean installation', async () => {
     const { root, scratch, mapping } = await fixture();
     vi.stubEnv('CEKAI_LINK_SOURCE_PACKAGE_ROOT', root);

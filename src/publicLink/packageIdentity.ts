@@ -31,10 +31,15 @@ export interface PublicSourceBuildIdentity {
 }
 
 /** Content integrity is not a publisher signature or Central authorization. */
-export function verifyPublicSourcePackage(root: string): PublicSourceBuildIdentity {
-  const files = publicSourcePackageFiles(root);
+export function verifyPublicSourcePackage(root: string, options: { readonly allowPreviousInventory?: boolean } = {}): PublicSourceBuildIdentity {
+  const currentFiles = publicSourcePackageFiles(root);
   const value = objectValue(readJson(path.join(root, 'link-build.json')), 'source build identity');
   exactKeys(value, ['schemaVersion', 'kind', 'packageVersion', 'publicSourceRevision', 'sourceDigest', 'treeDigest', 'packageArtifactId', 'files']);
+  // Deployment-side inspection must retain the exact pre-bootstrap format-4
+  // inventory. Client startup/build stays strict to the current inventory.
+  const previousFiles = currentFiles.filter(file => file !== 'dist/publicLink/compatibility.js');
+  const files = options.allowPreviousInventory && JSON.stringify(value.files) === JSON.stringify(previousFiles)
+    ? previousFiles : currentFiles;
   if (value.schemaVersion !== 1 || value.kind !== 'public-link-source-build'
     || typeof value.packageVersion !== 'string' || !value.packageVersion
     || typeof value.publicSourceRevision !== 'string' || !/^[a-f0-9]{40,64}$/.test(value.publicSourceRevision)
@@ -55,7 +60,7 @@ export function verifyPublicSourcePackage(root: string): PublicSourceBuildIdenti
   const observedFiles: string[] = [];
   collect(path.join(root, 'dist'), root, observedFiles);
   collect(path.join(root, 'bin'), root, observedFiles);
-  if (JSON.stringify(observedFiles.sort()) !== JSON.stringify(SOURCE_PACKAGE_FILES.filter((file) => file.startsWith('dist/') || file.startsWith('bin/')))) {
+  if (JSON.stringify(observedFiles.sort()) !== JSON.stringify(files.filter((file) => file.startsWith('dist/') || file.startsWith('bin/')))) {
     throw new Error('Public source package contains unreviewed runtime files');
   }
   const hash = createHash('sha256');
