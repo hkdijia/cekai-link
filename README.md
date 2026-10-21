@@ -7,7 +7,7 @@ The standalone client is open source under Apache-2.0. Central is a separate ser
 
 ## 中文接入指引
 
-本轮为接入简化的本地候选，尚未发行 npm；仅使用部署方核对的同字节 tarball 隔离验收。已正常运行 0.1.2 的用户继续使用原包。无需 clone 仓库，Mac、Windows、Linux 使用同一个 Node.js 包。
+本源码定版为 `@cekaitech/cekai-link@0.1.3`，尚未发行 npm。以下 registry 命令须待发行且部署方确认精确准入后使用；当前仅使用部署方核对的同字节 tarball 隔离验收。已正常运行 0.1.2 的用户继续使用原包，等待协同升级安排。无需 clone 仓库，Mac、Windows、Linux 使用同一个 Node.js 包。
 
 ### 1. 安装前准备
 
@@ -33,6 +33,8 @@ Mac / Linux 使用当前用户可写的 npm global prefix，不为 Link 修改�
 npm install --global --ignore-scripts /absolute/path/to/reviewed-link.tgz
 cekai-link setup
 ```
+
+公开发行且部署方批准后，可将安装命令替换为 `npm install --global --ignore-scripts @cekaitech/cekai-link@0.1.3`。
 
 Windows 在普通用户 PowerShell 使用 `.cmd`，无需修改全局执行策略：
 
@@ -72,7 +74,7 @@ Ctrl+C 正常停止当前前台 Link，配置和登记保留。确认旧进程�
 | `resolve-recovery` 或原进程持锁 | 先核对进程归属与执行、投递终态，不删锁或盲目重复任务 |
 | `repair-local-configuration` | 保留配置、运行状态和锁，先核对文件与进程归属；状态损坏时确认 Central 终态后再恢复 |
 
-显式 `CEKAI_LINK_COMPATIBILITY_PATH` 优先于已保存路径，错误覆盖不会自动回退。0.1.1 → 0.1.2 沿用配置格式，setup 更新匹配兼容文件路径，保留配对和工作区；回退需恢复升级前配置、原包、匹配文件及 Central 准入。旧 0.1.0 不能读取含新增 `compatibilityPath` 字段的新配置；不要恢复陈旧 runtime 或心跳序号。详见 [升级与回退](#012-changes-and-upgrade)。
+显式 `CEKAI_LINK_COMPATIBILITY_PATH` 优先于已保存路径，错误覆盖不会自动回退。0.1.2 → 0.1.3 沿用配置格式，setup 获取或登记新包匹配材料，保留配对和工作区；回退需恢复升级前完整配置、原包、匹配文件及 Central 准入。旧 0.1.0 不能读取含 `compatibilityPath` 字段的新配置；不要恢复陈旧 runtime 或心跳序号。详见 [升级与回退](#013-changes-and-upgrade)。
 
 反馈实际失败时，只提供发生时间（含时区）、安装版本、可见错误类别、是否收到最终回执，以及 inspect 的状态和下一步。不发送配对码、配置文件、凭据、工作目录、问题或回答正文、原始日志。
 
@@ -84,13 +86,15 @@ Link 固定绑定工作目录、`sandbox=read-only` 和 `approval_policy=never`�
 
 ## Install and first use
 
-This is a local onboarding candidate, not an npm release. Use only an owner-reviewed tarball for isolated acceptance. Existing 0.1.2 users keep their running package:
+This source defines `@cekaitech/cekai-link@0.1.3`; it is not yet an npm release. Use only an owner-reviewed tarball for isolated acceptance. Existing 0.1.2 users keep their running package until the deployment owner's coordinated upgrade:
 
 ```sh
 npm install --global --ignore-scripts /absolute/path/to/reviewed-link.tgz
 ```
 
 Check the original tarball SHA256 against the trusted delivery record. Installing a package does not grant Central admission.
+
+After registry publication and exact Central approval, install with `npm install --global --ignore-scripts @cekaitech/cekai-link@0.1.3`.
 
 Use `npm.cmd` and `cekai-link.cmd` in Windows PowerShell. You do not need to change your global execution policy.
 
@@ -117,6 +121,14 @@ cekai-link.cmd run
 ```
 
 An explicit `CEKAI_LINK_COMPATIBILITY_PATH` override wins and is revalidated; an invalid override never silently falls back. Executable detection proves Codex is located, not that account/model access works.
+
+## 0.1.3 changes and upgrade
+
+Setup obtains exact compatibility metadata from the confirmed Central origin before collecting a hidden pairing code. New installations no longer need a manually transferred file or its absolute path when Central supports bootstrap. Valid saved files work offline; explicit overrides and the manual-file fallback for older Central remain. Pairing, workspace registration and explicit chat binding retain their separate roles. Run does not download updates or change the user's Codex configuration.
+
+**Upgrade from 0.1.2:** keep a complete config backup, original package and its matching mapping. In the deployment owner's coordinated window, confirm idle/no pending recovery and normally stop only your foreground Link. Install the reviewed 0.1.3 package, clear obsolete mapping overrides and rerun setup. Existing pairing/workspace data and the saved server remain; setup obtains the new exact mapping or offers the manual-file path. Inspect must work in a new terminal without a mapping environment override. A downloaded mapping still requires Central's exact active approval.
+
+**Rollback to 0.1.2:** restore the original 0.1.2 package, its matching mapping, the complete upgrade-time config backup and corresponding Central approval. The shared config format is readable, but a 0.1.3 mapping cannot authorize 0.1.2. Keep the latest runtime and heartbeat sequence; never restore stale task state, remove locks or re-pair to force rollback. Older version recovery notes remain below.
 
 ## 0.1.2 changes and upgrade
 
