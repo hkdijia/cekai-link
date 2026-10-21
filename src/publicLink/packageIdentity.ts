@@ -6,7 +6,7 @@ import { digestValue, objectValue, type PublicLinkDigest, type PublicLinkRuntime
 
 export const SOURCE_PACKAGE_FILES = [
   'README.md', 'bin/cekai-link-source.cjs', 'package.json',
-  ...['api', 'cli', 'codex', 'config', 'inspect', 'packageIdentity', 'protocol', 'runtime', 'setup', 'workspace']
+  ...['api', 'cli', 'codex', 'compatibility', 'config', 'inspect', 'packageIdentity', 'protocol', 'runtime', 'setup', 'workspace']
     .map((name) => `dist/publicLink/${name}.js`)
 ].sort();
 
@@ -73,7 +73,7 @@ export function verifyPublicSourcePackage(root: string): PublicSourceBuildIdenti
     publicSourceRevision: value.publicSourceRevision, sourceDigest, treeDigest, packageArtifactId, files };
 }
 
-/** The deployment owner distributes this mapping separately; Central still grants exact approval. */
+/** A downloaded or manually supplied mapping never grants Central approval by itself. */
 export function parsePublicLinkCompatibility(value: unknown, packageArtifactId: PublicLinkDigest): PublicLinkRuntimeIdentity {
   const mapping = objectValue(value, 'Central compatibility mapping');
   exactKeys(mapping, ['schemaVersion', 'packageArtifactId', 'releaseId', 'sourceRevision', 'protocolVersion', 'contractDigest', 'sourceLinkRoleDigest', 'sourceLinkComponentDigests']);
@@ -99,7 +99,7 @@ export function parsePublicLinkCompatibility(value: unknown, packageArtifactId: 
 
 export function readPublicSourceRuntimeIdentity(packageRoot: string, mappingPath = process.env.CEKAI_LINK_COMPATIBILITY_PATH?.trim() || storedPublicLinkCompatibilityPath()): PublicLinkRuntimeIdentity {
   const build = verifyPublicSourcePackage(packageRoot);
-  if (!mappingPath || !path.isAbsolute(mappingPath)) throw new Error('Central compatibility mapping is required; run cekai-link setup to select the owner-provided absolute file');
+  if (!mappingPath || !path.isAbsolute(mappingPath)) throw new Error('Central compatibility mapping is required; run cekai-link setup to obtain it or select an owner-provided file');
   const relative = path.relative(packageRoot, mappingPath);
   if (relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))) {
     throw new Error('Central compatibility mapping must remain outside the public package');
@@ -108,7 +108,7 @@ export function readPublicSourceRuntimeIdentity(packageRoot: string, mappingPath
   try {
     regularFile(mappingPath);
     canonicalRelative = path.relative(realpathSync(packageRoot), realpathSync(mappingPath));
-  } catch { throw new Error('Central compatibility mapping could not be read; run cekai-link setup to select the owner-provided file'); }
+  } catch { throw new Error('Central compatibility mapping could not be read; run cekai-link setup to obtain matching material'); }
   if (canonicalRelative === '' || (!canonicalRelative.startsWith(`..${path.sep}`) && canonicalRelative !== '..' && !path.isAbsolute(canonicalRelative))) {
     throw new Error('Central compatibility mapping must remain outside the public package');
   }

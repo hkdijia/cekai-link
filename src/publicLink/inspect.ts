@@ -145,7 +145,7 @@ function selectNext(input: {
   if (input.localConfiguration === 'invalid') return decision('unavailable', 'repair-local-configuration', '修复本机 Link 配置', '配置无法读取；先核对本机配置文件，不重复配对或删除运行锁。');
   if (input.runtimeInvalid) return decision('unavailable', 'repair-local-configuration', '核对本机 Link 运行状态文件', '运行状态无法读取，不能确认上次任务或心跳序号；保留状态和锁，先核对进程归属与 Central 终态，不直接重新启动。');
   if (input.artifact.integrity === 'invalid') return decision('degraded', 'retry-central-inspection', '核对 Link 安装包', '安装包完整性未通过，先使用可信来源的完整安装包。');
-  if (input.artifact.source?.mapping === 'unavailable') return decision('setup-required', 'configure-compatibility', '运行 cekai-link setup，登记兼容文件', '尚无匹配当前安装包的可用兼容文件；向部署方取得正确文件，setup 会验证并保存其路径。');
+  if (input.artifact.source?.mapping === 'unavailable') return decision('setup-required', 'configure-compatibility', '运行 cekai-link setup，获取兼容材料', 'setup 可从可信 Central 获取当前包的兼容材料；离线或旧 Central 可使用部署方提供的文件。');
   if (input.codexInstallation === 'missing') return decision('setup-required', 'install-codex', '先安装并验证本机 Codex CLI', '未找到 Link 要启动的 Codex 命令；先确认原生 Codex 问答可用，再运行 cekai-link setup。');
   if (input.pairing !== 'paired') return decision('setup-required', 'pair-device', 'Pair this device before running Link', 'No local Central credential is configured.');
   if (input.workspaceRegistration !== 'registered') return decision('setup-required', 'register-workspace', 'Register a workspace', 'This device is paired but has no local workspace registration.');
