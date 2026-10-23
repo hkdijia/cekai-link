@@ -14,6 +14,7 @@ if (git('status', '--porcelain', '--untracked-files=all')) throw new Error('Stan
 const publicSourceRevision = git('rev-parse', 'HEAD');
 const tracked = git('ls-files', '-z').split('\0').filter(Boolean).sort();
 const permitted = (file) => /^src\/publicLink\/[A-Za-z]+(?:\.test)?\.ts$/.test(file)
+  || /^src\/adapters\/publicLinkService\/native(?:\.test)?\.ts$/.test(file)
   || ['.gitignore', 'README.md', 'LICENSE', 'NOTICE', 'package.json', 'package-lock.json', 'tsconfig.json', 'bin/cekai-link-source.cjs', 'tools/publicLink/buildSourcePackage.mjs', '.github/workflows/verify.yml', '.github/workflows/publish.yml'].includes(file);
 if (tracked.some((file) => !permitted(file))) throw new Error('Standalone source contains an unreviewed tracked file');
 const digest = (files) => {

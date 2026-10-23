@@ -122,6 +122,26 @@ cekai-link.cmd run
 
 An explicit `CEKAI_LINK_COMPATIBILITY_PATH` override wins and is revalidated; an invalid override never silently falls back. Executable detection proves Codex is located, not that account/model access works.
 
+## Background service development preview
+
+The published 0.1.4 package still uses foreground `run`. The source preview `0.1.5-service.0` adds optional current-user background execution; it has not been approved for the production Central or published to npm. Use it only with an isolated configuration and mock Central until coordinated delivery.
+
+After setup, stop foreground run normally and confirm inspect has no pending recovery. In a supported logged-in user session:
+
+```sh
+cekai-link service install
+cekai-link service status
+cekai-link service stop
+cekai-link service start
+cekai-link service uninstall
+```
+
+On Windows use `cekai-link.cmd`. Install starts the existing runtime and registers a current-user logon trigger (macOS LaunchAgent, Windows limited interactive Scheduled Task, Linux user systemd). It requires no administrator elevation or account password. Closing the installer terminal does not stop the runtime. Stop persists a disabled intent, including across a later login; start explicitly re-enables it. Uninstall removes only the owned service registration and preserves pairing, workspace, compatibility, runtime and heartbeat. Before npm uninstall or moving/upgrading Node/the package, stop and uninstall the service first. No automatic updater or crash-restart loop is included.
+
+The service runs in the same OS account with the saved executable search path and optional CODEX_HOME/Codex executable location, using the same personal Codex configuration, Skills and tools. It does not load `.zshrc`/PowerShell profiles or persist exported tokens, passwords, proxy credentials or arbitrary environment variables. Tools/providers that require shell-only secrets must obtain them through their normal user/session configuration; confirm a real question before switching daily use. Sleeping, logout and a powered-off computer cannot provide continuous Link availability. Linux requires an available user systemd manager; a plain Docker container is not such a session.
+
+Service status reuses the existing inspect runtime/nextAction. A foreground owner, unconfirmed task, changed registration or leftover process/operation lock blocks automatic takeover. Preserve evidence and inspect before recovery; service commands never remove stale runtime locks or replay tasks. Raw subprocess errors are not copied to native service journals. The per-config service identity is separate from the internal/formal Link.
+
 ## 0.1.4 changes and upgrade
 
 Run `cekai-link`, `help`, `--help` or `-h` for offline usage, and `--version` or `-v` for the installed package version and source identity. These commands run before personal configuration is read and do not contact Central or start Codex. Package integrity checks remain in effect. Unknown or duplicate arguments fail with a help hint; existing valid commands and inspect JSON retain their format.
@@ -172,7 +192,7 @@ Build digests prove content consistency, not publisher authenticity or authoriza
 
 ## Build from source
 
-This source targets version `0.1.4`. A clean source build is not a registry publication or production approval; use the exact released package accepted by your deployment owner for daily use.
+This source targets development preview `0.1.5-service.0`; the published daily package remains `0.1.4`. A clean source build is not a registry publication or production approval; use the exact released package accepted by your deployment owner for daily use.
 
 ```sh
 npm ci --ignore-scripts

@@ -6,8 +6,9 @@ import { digestValue, objectValue, type PublicLinkDigest, type PublicLinkRuntime
 
 export const SOURCE_PACKAGE_FILES = [
   'README.md', 'bin/cekai-link-source.cjs', 'package.json',
-  ...['api', 'cli', 'codex', 'compatibility', 'config', 'inspect', 'packageIdentity', 'protocol', 'runtime', 'setup', 'workspace']
-    .map((name) => `dist/publicLink/${name}.js`)
+  ...['api', 'cli', 'codex', 'compatibility', 'config', 'inspect', 'packageIdentity', 'protocol', 'runtime', 'service', 'serviceFiles', 'setup', 'workspace']
+    .map((name) => `dist/publicLink/${name}.js`),
+  'dist/adapters/publicLinkService/native.js'
 ].sort();
 
 /** Optional legal files are hashed, never invented or granted by the builder. */
@@ -37,9 +38,10 @@ export function verifyPublicSourcePackage(root: string, options: { readonly allo
   exactKeys(value, ['schemaVersion', 'kind', 'packageVersion', 'publicSourceRevision', 'sourceDigest', 'treeDigest', 'packageArtifactId', 'files']);
   // Deployment-side inspection must retain the exact pre-bootstrap format-4
   // inventory. Client startup/build stays strict to the current inventory.
-  const previousFiles = currentFiles.filter(file => file !== 'dist/publicLink/compatibility.js');
-  const files = options.allowPreviousInventory && JSON.stringify(value.files) === JSON.stringify(previousFiles)
-    ? previousFiles : currentFiles;
+  const beforeService = currentFiles.filter(file => !['dist/publicLink/service.js', 'dist/publicLink/serviceFiles.js', 'dist/adapters/publicLinkService/native.js'].includes(file));
+  const previousInventories = [beforeService, beforeService.filter(file => file !== 'dist/publicLink/compatibility.js')];
+  const previous = options.allowPreviousInventory ? previousInventories.find(files => JSON.stringify(value.files) === JSON.stringify(files)) : undefined;
+  const files = previous ?? currentFiles;
   if (value.schemaVersion !== 1 || value.kind !== 'public-link-source-build'
     || typeof value.packageVersion !== 'string' || !value.packageVersion
     || typeof value.publicSourceRevision !== 'string' || !/^[a-f0-9]{40,64}$/.test(value.publicSourceRevision)

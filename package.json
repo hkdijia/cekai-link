@@ -1,6 +1,6 @@
 {
   "name": "@cekaitech/cekai-link",
-  "version": "0.1.4",
+  "version": "0.1.5-service.0",
   "private": false,
   "license": "Apache-2.0",
   "description": "Node.js client for workspace-bound Cekai Link questions through Codex CLI.",
@@ -27,6 +27,7 @@
   "files": [
     "bin/cekai-link-source.cjs",
     "dist/publicLink/*.js",
+    "dist/adapters/publicLinkService/*.js",
     "link-build.json",
     "README.md",
     "LICENSE",

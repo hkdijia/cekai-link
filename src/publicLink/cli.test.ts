@@ -12,6 +12,12 @@ describe('public Link CLI surface', () => {
     expect(parsePublicLinkArgs(['inspect', '--json'])).toEqual({ command: 'inspect', json: true });
     expect(parsePublicLinkArgs(['setup'])).toEqual({ command: 'setup' });
     expect(parsePublicLinkArgs(['run'])).toEqual({ command: 'run' });
+    for (const action of ['install', 'start', 'status', 'stop', 'uninstall']) {
+      expect(parsePublicLinkArgs(['service', action])).toEqual({ command: 'service', action });
+    }
+    for (const argv of [['service'], ['service', 'update'], ['service', 'install', '--force'], ['service', 'status', '--json', '--json']]) {
+      expect(() => parsePublicLinkArgs(argv)).toThrow('Usage:');
+    }
   });
 
   it('has no integration, MCP or workspace-write CLI branches', () => {
