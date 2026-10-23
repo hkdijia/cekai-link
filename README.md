@@ -7,7 +7,7 @@ The standalone client is open source under Apache-2.0. Central is a separate ser
 
 ## 中文接入指引
 
-通过 npm 安装 `@cekaitech/cekai-link@0.1.3`，无需 clone 仓库；Mac、Windows、Linux 使用同一个 Node.js 包。安装前向部署方确认该版本已获 Central 准入。已有设备按部署方安排升级，保留原配置和配对，无需重新登记工作区。
+通过 npm 安装部署方批准的精确版本，无需 clone 仓库；Mac、Windows、Linux 使用同一个 Node.js 包。以下命令以 `@cekaitech/cekai-link@0.1.4` 为例，执行前确认该版本已在 npm 发行且获目标 Central 准入。已有设备按部署方安排升级，保留原配置和配对，无需重新登记工作区。
 
 ### 1. 安装前准备
 
@@ -30,7 +30,7 @@ codex --version
 Mac / Linux 使用当前用户可写的 npm global prefix，不为 Link 修改系统目录权限：
 
 ```sh
-npm install --global --ignore-scripts @cekaitech/cekai-link@0.1.3
+npm install --global --ignore-scripts @cekaitech/cekai-link@0.1.4
 cekai-link setup
 ```
 
@@ -39,7 +39,7 @@ cekai-link setup
 Windows 在普通用户 PowerShell 使用 `.cmd`，无需修改全局执行策略：
 
 ```powershell
-npm.cmd install --global --ignore-scripts @cekaitech/cekai-link@0.1.3
+npm.cmd install --global --ignore-scripts @cekaitech/cekai-link@0.1.4
 cekai-link.cmd setup
 ```
 
@@ -74,7 +74,9 @@ Ctrl+C 正常停止当前前台 Link，配置和登记保留。确认旧进程�
 | `resolve-recovery` 或原进程持锁 | 先核对进程归属与执行、投递终态，不删锁或盲目重复任务 |
 | `repair-local-configuration` | 保留配置、运行状态和锁，先核对文件与进程归属；状态损坏时确认 Central 终态后再恢复 |
 
-显式 `CEKAI_LINK_COMPATIBILITY_PATH` 优先于已保存路径，错误覆盖不会自动回退。0.1.2 → 0.1.3 沿用配置格式，setup 获取或登记新包匹配材料，保留配对和工作区；回退需恢复升级前完整配置、原包、匹配文件及 Central 准入。旧 0.1.0 不能读取含 `compatibilityPath` 字段的新配置；不要恢复陈旧 runtime 或心跳序号。详见 [升级与回退](#013-changes-and-upgrade)。
+可随时运行 `cekai-link --help` 查看首次接入步骤，或 `cekai-link --version` 核对安装包版本与源码身份；无参数也显示帮助。这些查询不读取个人 Link 配置、不连接 Central 或启动 Codex。`inspect`、`status`、`doctor` 只接受可选的单个 `--json`；未知或重复参数会明确失败并指向帮助。
+
+显式 `CEKAI_LINK_COMPATIBILITY_PATH` 优先于已保存路径，错误覆盖不会自动回退。0.1.3 → 0.1.4 沿用配置格式，setup 获取或登记新包匹配材料，保留配对和工作区；回退需恢复升级前完整配置、原包、匹配文件及 Central 准入。旧 0.1.0 不能读取含 `compatibilityPath` 字段的新配置；不要恢复陈旧 runtime 或心跳序号。详见 [升级与回退](#014-changes-and-upgrade)。
 
 反馈实际失败时，只提供发生时间（含时区）、安装版本、可见错误类别、是否收到最终回执，以及 inspect 的状态和下一步。不发送配对码、配置文件、凭据、工作目录、问题或回答正文、原始日志。
 
@@ -86,10 +88,10 @@ Link 固定绑定工作目录、`sandbox=read-only` 和 `approval_policy=never`�
 
 ## Install and first use
 
-Install `@cekaitech/cekai-link@0.1.3` from npm after your deployment owner confirms that Central accepts this version. Mac, Windows and Linux use the same Node.js package; no repository clone is needed. Existing devices upgrade on the deployment owner's schedule and keep their configuration, pairing and workspace registration:
+Install the exact version approved by your deployment owner. The examples use `@cekaitech/cekai-link@0.1.4`; confirm that the version exists on npm and that your Central accepts it before installing. Mac, Windows and Linux use the same Node.js package; no repository clone is needed. Existing devices upgrade on the deployment owner's schedule and keep their configuration, pairing and workspace registration:
 
 ```sh
-npm install --global --ignore-scripts @cekaitech/cekai-link@0.1.3
+npm install --global --ignore-scripts @cekaitech/cekai-link@0.1.4
 ```
 
 For offline installation, replace the package specifier with an owner-provided original tarball path and check its SHA256 against the trusted delivery record. Installing a package does not grant Central admission.
@@ -119,6 +121,14 @@ cekai-link.cmd run
 ```
 
 An explicit `CEKAI_LINK_COMPATIBILITY_PATH` override wins and is revalidated; an invalid override never silently falls back. Executable detection proves Codex is located, not that account/model access works.
+
+## 0.1.4 changes and upgrade
+
+Run `cekai-link`, `help`, `--help` or `-h` for offline usage, and `--version` or `-v` for the installed package version and source identity. These commands run before personal configuration is read and do not contact Central or start Codex. Package integrity checks remain in effect. Unknown or duplicate arguments fail with a help hint; existing valid commands and inspect JSON retain their format.
+
+**Upgrade from 0.1.3:** in the deployment owner's coordinated window, confirm idle/no pending recovery, normally stop your foreground Link and preserve the complete upgrade-time config, original 0.1.3 package and matching mapping. Install the approved 0.1.4 package and run setup for its exact compatibility metadata. Pairing, workspace and explicit chat binding remain. Confirm inspect in a new terminal without a mapping override.
+
+**Rollback to 0.1.3:** restore the original package, matching mapping, upgrade-time config and corresponding Central approval together. Preserve current runtime and heartbeat sequence; never delete locks, restore stale task state or re-pair to force recovery. The config format and read-only execution profile have not changed.
 
 ## 0.1.3 changes and upgrade
 
@@ -162,7 +172,7 @@ Build digests prove content consistency, not publisher authenticity or authoriza
 
 ## Build from source
 
-The current source is the `0.1.4-cli.0` development preview. It adds offline help (`cekai-link`, `help`, `--help`, `-h`) and version/source queries (`--version`, `-v`) before personal configuration is read. These commands are not included in the published 0.1.3 package yet. Continue using the stable npm version above for daily use; this source preview has no production admission.
+This source targets version `0.1.4`. A clean source build is not a registry publication or production approval; use the exact released package accepted by your deployment owner for daily use.
 
 ```sh
 npm ci --ignore-scripts

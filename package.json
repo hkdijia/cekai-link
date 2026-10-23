@@ -1,6 +1,6 @@
 {
   "name": "@cekaitech/cekai-link",
-  "version": "0.1.4-cli.0",
+  "version": "0.1.4",
   "private": false,
   "license": "Apache-2.0",
   "description": "Node.js client for workspace-bound Cekai Link questions through Codex CLI.",
