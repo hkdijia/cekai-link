@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createPublicLinkApi, type PublicLinkApi } from './api.js';
-import { createPublicLinkConfigStore, defaultPublicLinkRuntimePath, writePublicLinkFile, type PublicLinkConfigStore } from './config.js';
+import { createPublicLinkConfigStore, defaultPublicLinkRuntimePath, replacePublicLinkFile, writePublicLinkFile, type PublicLinkConfigStore } from './config.js';
 import { createPublicCodexRuntime, type PublicCodexRuntime } from './codex.js';
 import { readPublicSourceRuntimeIdentity, verifyPublicSourcePackage } from './packageIdentity.js';
 import { validatePublicLinkWorkspace } from './workspace.js';
@@ -127,7 +127,7 @@ export function createPublicLinkRuntime(input: {
       await mkdir(path.dirname(runtimePath), { recursive: true, mode: 0o700 });
       const temporary = `${runtimePath}.${process.pid}.${randomUUID()}.tmp`;
       await writeFile(temporary, `${JSON.stringify(value)}\n`, { mode: 0o600 });
-      try { await rename(temporary, runtimePath); } catch (error) { await rm(temporary, { force: true }); throw error; }
+      try { await replacePublicLinkFile(temporary, runtimePath); } catch (error) { await rm(temporary, { force: true }); throw error; }
     });
     // A failed write still rejects its caller, without poisoning later recovery.
     pendingPublish = publication.catch(() => undefined);

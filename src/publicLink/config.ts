@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { homedir, hostname, platform } from 'node:os';
 import path from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { parsePublicLinkConfig, type PublicLinkConfig, type PublicLinkOs } from './protocol.js';
 
 export interface PublicLinkConfigStore {
@@ -79,8 +80,20 @@ export async function writePublicLinkFile(file: string, bytes: string, exclusive
     finally { await handle.close(); }
     await chmod(temporary, 0o600);
     if (exclusive) await link(temporary, file);
-    else await rename(temporary, file);
+    else await replacePublicLinkFile(temporary, file);
   } finally { await rm(temporary, { force: true }); }
+}
+
+/** Windows readers/scanners can briefly deny replace; never delete the old target. */
+export async function replacePublicLinkFile(source: string, target: string, os: NodeJS.Platform = process.platform): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try { await rename(source, target); return; }
+    catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (os !== 'win32' || !['EPERM', 'EACCES', 'EBUSY'].includes(code ?? '') || attempt >= 7) throw error;
+      await delay(Math.min(25 * 2 ** attempt, 200));
+    }
+  }
 }
 
 /** The synchronous package entry reads the same config as setup/inspect. */

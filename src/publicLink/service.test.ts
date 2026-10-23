@@ -4,7 +4,7 @@ import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { operatePublicLinkService } from './service.js';
-import { createPublicLinkConfigStore } from './config.js';
+import { createPublicLinkConfigStore, replacePublicLinkFile } from './config.js';
 import * as identity from './packageIdentity.js';
 import { readServiceOwner, readServiceRecord, serviceOwnerPath, serviceRecordPath, withServiceLock, writeServiceJson, type PublicLinkServiceRecord } from './serviceFiles.js';
 import type { PublicLinkNativeService } from '../adapters/publicLinkService/native.js';
@@ -12,7 +12,7 @@ import type { PublicLinkNativeService } from '../adapters/publicLinkService/nati
 const roots: string[] = [];
 vi.mock('node:fs/promises', async original => {
   const actual = await original<typeof import('node:fs/promises')>();
-  return { ...actual, open: vi.fn(actual.open) };
+  return { ...actual, open: vi.fn(actual.open), rename: vi.fn(actual.rename) };
 });
 afterEach(async () => { vi.restoreAllMocks(); vi.unstubAllEnvs(); await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
 async function fixture() {
@@ -30,6 +30,24 @@ async function fixture() {
 }
 
 describe('public service lifecycle and owned files', () => {
+  it('retries transient Windows replace denial without deleting a valid target and preserves it after bounded failure', async () => {
+    const { root } = await fixture();
+    const source = path.join(root, 'prepared'); const target = path.join(root, 'current');
+    await writeFile(source, 'new-complete'); await writeFile(target, 'previous-valid');
+    const originalRename = (await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).rename;
+    const denied = Object.assign(new Error('reader still holds file'), { code: 'EPERM' });
+    const rename = vi.mocked(fileSystem.rename);
+    rename.mockRejectedValueOnce(denied);
+    await replacePublicLinkFile(source, target, 'win32');
+    expect(await readFile(target, 'utf8')).toBe('new-complete');
+    await writeFile(source, 'another-new'); rename.mockRejectedValue(denied);
+    try {
+      await expect(replacePublicLinkFile(source, target, 'win32')).rejects.toBe(denied);
+      expect(await readFile(target, 'utf8')).toBe('new-complete');
+      expect(await readFile(source, 'utf8')).toBe('another-new');
+    } finally { rename.mockImplementation(originalRename); }
+  });
+
   it('publishes a complete exclusive owner record without exposing partial bytes and keeps an existing owner intact', async () => {
     const { configPath } = await fixture();
     let writing!: () => void; let release!: () => void;
