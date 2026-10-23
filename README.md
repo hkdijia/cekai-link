@@ -7,7 +7,7 @@ The standalone client is open source under Apache-2.0. Central is a separate ser
 
 ## 中文接入指引
 
-通过 npm 安装部署方批准的精确版本，无需 clone 仓库；Mac、Windows、Linux 使用同一个 Node.js 包。以下命令以 `@cekaitech/cekai-link@0.1.4` 为例，执行前确认该版本已在 npm 发行且获目标 Central 准入。已有设备按部署方安排升级，保留原配置和配对，无需重新登记工作区。
+通过 npm 安装部署方批准的精确版本，无需 clone 仓库；Mac、Windows、Linux 使用同一个 Node.js 包。以下命令以 `@cekaitech/cekai-link@0.1.5` 为例，执行前确认该版本已在 npm 发行且获目标 Central 准入。已有设备按部署方安排升级，保留原配置和配对，无需重新登记工作区。
 
 ### 1. 安装前准备
 
@@ -30,7 +30,7 @@ codex --version
 Mac / Linux 使用当前用户可写的 npm global prefix，不为 Link 修改系统目录权限：
 
 ```sh
-npm install --global --ignore-scripts @cekaitech/cekai-link@0.1.4
+npm install --global --ignore-scripts @cekaitech/cekai-link@0.1.5
 cekai-link setup
 ```
 
@@ -39,7 +39,7 @@ cekai-link setup
 Windows 在普通用户 PowerShell 使用 `.cmd`，无需修改全局执行策略：
 
 ```powershell
-npm.cmd install --global --ignore-scripts @cekaitech/cekai-link@0.1.4
+npm.cmd install --global --ignore-scripts @cekaitech/cekai-link@0.1.5
 cekai-link.cmd setup
 ```
 
@@ -60,7 +60,7 @@ Mac / Linux 运行 `cekai-link run`，Windows 运行 `cekai-link.cmd run`，保�
 
 在已绑定会话发送普通问题，例如“请只读概述当前工作区的用途。”不要求 `/agent`。确认收到回答和最终回执；安装成功或 inspect 就绪不能代替首次真实问答。
 
-Ctrl+C 正常停止当前前台 Link，配置和登记保留。确认旧进程已退出且无待恢复任务后可再次 run，不需重新配对。当前版本没有自动后台服务或自动更新。
+Ctrl+C 正常停止当前前台 Link，配置和登记保留。确认旧进程已退出且无待恢复任务后可再次 run，不需重新配对。也可在正常停止前台后，显式安装用户级后台服务，见下方说明；默认仍为前台运行，不自动更新。
 
 ### 4. 遇到问题时
 
@@ -76,7 +76,7 @@ Ctrl+C 正常停止当前前台 Link，配置和登记保留。确认旧进程�
 
 可随时运行 `cekai-link --help` 查看首次接入步骤，或 `cekai-link --version` 核对安装包版本与源码身份；无参数也显示帮助。这些查询不读取个人 Link 配置、不连接 Central 或启动 Codex。`inspect`、`status`、`doctor` 只接受可选的单个 `--json`；未知或重复参数会明确失败并指向帮助。
 
-显式 `CEKAI_LINK_COMPATIBILITY_PATH` 优先于已保存路径，错误覆盖不会自动回退。0.1.3 → 0.1.4 沿用配置格式，setup 获取或登记新包匹配材料，保留配对和工作区；回退需恢复升级前完整配置、原包、匹配文件及 Central 准入。旧 0.1.0 不能读取含 `compatibilityPath` 字段的新配置；不要恢复陈旧 runtime 或心跳序号。详见 [升级与回退](#014-changes-and-upgrade)。
+显式 `CEKAI_LINK_COMPATIBILITY_PATH` 优先于已保存路径，错误覆盖不会自动回退。0.1.4 → 0.1.5 沿用配置格式，setup 获取或登记新包匹配材料，保留配对和工作区；回退需恢复升级前完整配置、原包、匹配文件及 Central 准入。旧 0.1.0 不能读取含 `compatibilityPath` 字段的新配置；不要恢复陈旧 runtime 或心跳序号。详见 [升级与回退](#015-background-service-and-upgrade)。
 
 反馈实际失败时，只提供发生时间（含时区）、安装版本、可见错误类别、是否收到最终回执，以及 inspect 的状态和下一步。不发送配对码、配置文件、凭据、工作目录、问题或回答正文、原始日志。
 
@@ -88,10 +88,10 @@ Link 固定绑定工作目录、`sandbox=read-only` 和 `approval_policy=never`�
 
 ## Install and first use
 
-Install the exact version approved by your deployment owner. The examples use `@cekaitech/cekai-link@0.1.4`; confirm that the version exists on npm and that your Central accepts it before installing. Mac, Windows and Linux use the same Node.js package; no repository clone is needed. Existing devices upgrade on the deployment owner's schedule and keep their configuration, pairing and workspace registration:
+Install the exact version approved by your deployment owner. The examples use `@cekaitech/cekai-link@0.1.5`; confirm that the version exists on npm and that your Central accepts it before installing. Mac, Windows and Linux use the same Node.js package; no repository clone is needed. Existing devices upgrade on the deployment owner's schedule and keep their configuration, pairing and workspace registration:
 
 ```sh
-npm install --global --ignore-scripts @cekaitech/cekai-link@0.1.4
+npm install --global --ignore-scripts @cekaitech/cekai-link@0.1.5
 ```
 
 For offline installation, replace the package specifier with an owner-provided original tarball path and check its SHA256 against the trusted delivery record. Installing a package does not grant Central admission.
@@ -104,7 +104,7 @@ Before setup you need:
 2. A trusted deployment owner's HTTPS Central origin and pairing code. Setup downloads metadata for the exact installed package; offline or older servers still support an owner-provided matching file outside the package/workspace. Neither material grants admission.
 3. A local workspace you choose, and an explicit binding in your target robot conversation. Workspace registration does not switch another user's conversation.
 
-Run `cekai-link setup`, then `cekai-link run` in the foreground. Follow the next action from `cekai-link inspect`; explicitly bind the target conversation before asking questions. Natural-language questions do not require `/agent`. Keep the foreground terminal open; Ctrl+C stops only this Link. There is no automatic service or update.
+Run `cekai-link setup`, then `cekai-link run` in the foreground. Follow the next action from `cekai-link inspect`; explicitly bind the target conversation before asking questions. Natural-language questions do not require `/agent`. Keep the foreground terminal open; Ctrl+C stops only this Link. After a normal stop, optional current-user background execution is available below. There is no automatic update.
 
 Setup self-checks the package and locates Codex, asks for the trusted Central origin, then downloads and validates exact compatibility metadata before collecting a hidden pairing code. It rejects redirects, limits reads to 10 seconds / 16 KiB, sends no credentials or workspace information, and atomically stores metadata in Link-owned state. A valid saved file works offline. Download failure offers the manual-file path without consuming a code or replacing working config. Paired devices keep their saved server; run never downloads updates:
 
@@ -122,9 +122,13 @@ cekai-link.cmd run
 
 An explicit `CEKAI_LINK_COMPATIBILITY_PATH` override wins and is revalidated; an invalid override never silently falls back. Executable detection proves Codex is located, not that account/model access works.
 
-## Background service development preview
+## 0.1.5 background service and upgrade
 
-The published 0.1.4 package still uses foreground `run`. The source preview `0.1.5-service.0` adds optional current-user background execution; it has not been approved for the production Central or published to npm. Use it only with an isolated configuration and mock Central until coordinated delivery.
+Version 0.1.5 adds optional current-user background execution. The default foreground `run` remains available. Before using either mode, confirm that the exact package is published or supplied through a trusted delivery and approved by your Central; source build and npm installation alone do not grant admission.
+
+0.1.5 增加可选的用户级后台运行和登录后启动。先完成 setup，正常停止已有前台 Link，并确认没有待恢复任务；再运行下方 service 命令。安装会立即启动后台 Link，关闭安装终端后继续工作。`stop` 会保持禁用，之后登录也不会自行恢复；用 `start` 显式恢复。`uninstall` 只移除服务，保留配对、工作区、兼容材料和心跳。
+
+Mac 使用 LaunchAgent，Windows 使用当前用户普通权限计划任务，Linux 需要可用的用户 systemd；均不要求管理员权限或系统密码。服务不加载 shell 配置脚本，不保存临时导出的账号或代理凭据；保留个人 Codex 配置和工具，使用前确认实际问答可用。睡眠、注销或关机期间不承诺在线。
 
 After setup, stop foreground run normally and confirm inspect has no pending recovery. In a supported logged-in user session:
 
@@ -141,6 +145,10 @@ On Windows use `cekai-link.cmd`. Install starts the existing runtime and registe
 The service runs in the same OS account with the saved executable search path and optional CODEX_HOME/Codex executable location, using the same personal Codex configuration, Skills and tools. It does not load `.zshrc`/PowerShell profiles or persist exported tokens, passwords, proxy credentials or arbitrary environment variables. Tools/providers that require shell-only secrets must obtain them through their normal user/session configuration; confirm a real question before switching daily use. Sleeping, logout and a powered-off computer cannot provide continuous Link availability. Linux requires an available user systemd manager; a plain Docker container is not such a session.
 
 Service status reuses the existing inspect runtime/nextAction. A foreground owner, unconfirmed task, changed registration or leftover process/operation lock blocks automatic takeover. Preserve evidence and inspect before recovery; service commands never remove stale runtime locks or replay tasks. Raw subprocess errors are not copied to native service journals. The per-config service identity is separate from the internal/formal Link.
+
+**Upgrade from 0.1.4:** in the deployment owner's coordinated window, confirm idle/no pending recovery, normally stop foreground Link and retain the exact 0.1.4 package, matching mapping and complete upgrade-time config. Install the approved 0.1.5 package and rerun setup to obtain its exact compatibility metadata. Pairing, workspace and explicit chat binding remain. Start in the foreground or explicitly opt into `service install`; setup does not install a service automatically.
+
+**Rollback to 0.1.4:** while the 0.1.5 CLI is still available, normally stop and uninstall any 0.1.5 service first. Restore the original 0.1.4 package, matching mapping, complete upgrade-time config and corresponding Central approval together. Then use foreground run. Keep the current runtime and heartbeat sequence; never restore stale task state, remove locks or re-pair to force rollback. The service record is separate from the shared config format. Older recovery notes remain below.
 
 ## 0.1.4 changes and upgrade
 
@@ -192,7 +200,7 @@ Build digests prove content consistency, not publisher authenticity or authoriza
 
 ## Build from source
 
-This source targets development preview `0.1.5-service.0`; the published daily package remains `0.1.4`. A clean source build is not a registry publication or production approval; use the exact released package accepted by your deployment owner for daily use.
+This source targets version `0.1.5`. A clean source build is not a registry publication or production approval; use the exact released package accepted by your deployment owner for daily use.
 
 ```sh
 npm ci --ignore-scripts
