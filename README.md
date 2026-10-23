@@ -162,6 +162,8 @@ Build digests prove content consistency, not publisher authenticity or authoriza
 
 ## Build from source
 
+The current source is the `0.1.4-cli.0` development preview. It adds offline help (`cekai-link`, `help`, `--help`, `-h`) and version/source queries (`--version`, `-v`) before personal configuration is read. These commands are not included in the published 0.1.3 package yet. Continue using the stable npm version above for daily use; this source preview has no production admission.
+
 ```sh
 npm ci --ignore-scripts
 npm test

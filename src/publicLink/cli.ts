@@ -5,21 +5,43 @@ import { createPublicLinkRuntime, readPublicLinkRuntimeIdentity } from './runtim
 import { askPublicLinkQuestion, runPublicLinkSetup } from './setup.js';
 import { assertIdentifier, httpsServerUrl } from './protocol.js';
 import { validatePublicLinkWorkspace } from './workspace.js';
+import { verifyPublicSourcePackage } from './packageIdentity.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
 
 export type PublicLinkCommand =
+  | { readonly command: 'help' | 'version' }
   | { readonly command: 'inspect'; readonly json: boolean }
   | { readonly command: 'setup' }
   | { readonly command: 'pair'; readonly stdinCode: boolean; readonly serverUrl: string }
   | { readonly command: 'workspace-add'; readonly directory: string }
   | { readonly command: 'run' };
 
-const usage = 'Usage: cekai-link inspect [--json] | setup | pair --server <https-url> [--code-stdin] | workspace add --path <absolute-path> | run';
+const usage = 'Usage: cekai-link setup | run | inspect [--json] | --help | --version\n运行 cekai-link --help 查看全部命令和首次接入步骤。';
+const help = [
+  'Cekai Link — 本机工作区只读问答', '',
+  '常用命令：',
+  '  cekai-link setup             配对设备并登记自己选择的工作区；中断后可重新运行',
+  '  cekai-link run               前台运行 Link，保持终端打开；Ctrl+C 正常停止',
+  '  cekai-link inspect [--json]  查看状态和唯一下一步；status / doctor 为同一入口',
+  '  cekai-link --version         查看安装包版本和源码身份',
+  '  cekai-link --help            查看此帮助（也可使用 help / -h）', '',
+  '首次接入：先确认本机 Codex 可独立问答 → setup → run → 在目标聊天显式绑定设备和工作区。',
+  '设备配对、工作区登记和聊天绑定分别完成；普通问题无需 /agent。', '',
+  '高级入口：',
+  '  cekai-link pair --server <https-url> [--code-stdin]',
+  '  cekai-link workspace add --path <absolute-path>',
+  '配对码使用隐藏输入或可信管道，不放入命令参数。', '',
+  '帮助和版本查询无需配对，不读取个人 Link 配置或启动问答。',
+  '接入指引：https://github.com/hkdijia/cekai-link#中文接入指引', ''
+].join('\n');
 
 export function parsePublicLinkArgs(argv: readonly string[]): PublicLinkCommand {
-  if (argv[0] === 'inspect' || argv[0] === 'status' || argv[0] === 'doctor') return { command: 'inspect', json: argv.includes('--json') };
+  if (argv.length === 0 || (argv.length === 1 && ['help', '--help', '-h'].includes(argv[0]!))) return { command: 'help' };
+  if (argv.length === 1 && ['--version', '-v'].includes(argv[0]!)) return { command: 'version' };
+  if ((argv[0] === 'inspect' || argv[0] === 'status' || argv[0] === 'doctor')
+    && (argv.length === 1 || (argv.length === 2 && argv[1] === '--json'))) return { command: 'inspect', json: argv.length === 2 };
   if (argv[0] === 'setup' && argv.length === 1) return { command: 'setup' };
   if (argv[0] === 'run' && argv.length === 1) return { command: 'run' };
   if (argv[0] === 'pair' && argv[1] === '--server' && (argv.length === 3 || (argv.length === 4 && argv[3] === '--code-stdin'))) {
@@ -31,6 +53,17 @@ export function parsePublicLinkArgs(argv: readonly string[]): PublicLinkCommand 
 
 export async function main(argv = process.argv.slice(2)): Promise<void> {
   const command = parsePublicLinkArgs(argv);
+  if (command.command === 'help') {
+    process.stdout.write(help);
+    return;
+  }
+  if (command.command === 'version') {
+    const root = process.env.CEKAI_LINK_SOURCE_PACKAGE_ROOT;
+    if (!root) throw new Error('安装包版本身份不可用；请从已安装的 cekai-link 入口运行 --version。');
+    const identity = verifyPublicSourcePackage(root);
+    process.stdout.write(`Cekai Link ${identity.packageVersion}\nsource ${identity.publicSourceRevision}\n`);
+    return;
+  }
   const config = createPublicLinkConfigStore();
   if (command.command === 'inspect') {
     const snapshot = await readPublicLinkSnapshot({ configPath: config.filePath });

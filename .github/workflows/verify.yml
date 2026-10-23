@@ -32,5 +32,44 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm test
       - run: npm run build
+      - name: Verify offline CLI entrypoints without touching user state
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          import os from 'node:os';
+          import path from 'node:path';
+          import { execFileSync } from 'node:child_process';
+          const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cekai-cli-offline-'));
+          try {
+            const config = path.join(root, 'config.json'), runtime = path.join(root, 'runtime.json');
+            fs.writeFileSync(config, 'synthetic-private-config');
+            fs.writeFileSync(runtime, 'synthetic-private-runtime');
+            const env = { ...process.env, CEKAI_LINK_PUBLIC_CONFIG_PATH: config, CEKAI_LINK_PUBLIC_RUNTIME_PATH: runtime,
+              CEKAI_LINK_COMPATIBILITY_PATH: path.join(root, 'missing-mapping.json') };
+            const cli = path.resolve('bin/cekai-link-source.cjs');
+            for (const args of [[], ['help'], ['--help'], ['-h']]) {
+              const output = execFileSync(process.execPath, [cli, ...args], { env, encoding: 'utf8', timeout: 10000 });
+              assert(output.includes('cekai-link setup') && output.includes('cekai-link inspect'));
+              assert(!output.includes('synthetic-private'));
+            }
+            const metadata = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            const build = JSON.parse(fs.readFileSync('link-build.json', 'utf8'));
+            for (const flag of ['--version', '-v']) {
+              const output = execFileSync(process.execPath, [cli, flag], { env, encoding: 'utf8', timeout: 10000 });
+              assert.equal(output, `Cekai Link ${metadata.version}\nsource ${build.publicSourceRevision}\n`);
+            }
+            for (const args of [['inspect', '--unknown'], ['status', '--json', '--json'], ['run', '--write']]) {
+              let failed = false;
+              try { execFileSync(process.execPath, [cli, ...args], { env, stdio: 'pipe', timeout: 10000 }); }
+              catch (error) { assert.equal(error.status, 1); assert(String(error.stderr).includes('cekai-link --help')); failed = true; }
+              assert(failed);
+            }
+            assert.equal(fs.readFileSync(config, 'utf8'), 'synthetic-private-config');
+            assert.equal(fs.readFileSync(runtime, 'utf8'), 'synthetic-private-runtime');
+            assert.deepEqual(fs.readdirSync(root).sort(), ['config.json', 'runtime.json']);
+          } finally { fs.rmSync(root, { recursive: true, force: true }); }
+          NODE
       - run: npm pack --dry-run --ignore-scripts
       - run: git diff --check
