@@ -7,7 +7,7 @@ The standalone client is open source under Apache-2.0. Central is a separate ser
 
 ## 中文接入指引
 
-本源码定版为 `@cekaitech/cekai-link@0.1.3`，尚未发行 npm。以下 registry 命令须待发行且部署方确认精确准入后使用；当前仅使用部署方核对的同字节 tarball 隔离验收。已正常运行 0.1.2 的用户继续使用原包，等待协同升级安排。无需 clone 仓库，Mac、Windows、Linux 使用同一个 Node.js 包。
+通过 npm 安装 `@cekaitech/cekai-link@0.1.3`，无需 clone 仓库；Mac、Windows、Linux 使用同一个 Node.js 包。安装前向部署方确认该版本已获 Central 准入。已有设备按部署方安排升级，保留原配置和配对，无需重新登记工作区。
 
 ### 1. 安装前准备
 
@@ -30,16 +30,16 @@ codex --version
 Mac / Linux 使用当前用户可写的 npm global prefix，不为 Link 修改系统目录权限：
 
 ```sh
-npm install --global --ignore-scripts /absolute/path/to/reviewed-link.tgz
+npm install --global --ignore-scripts @cekaitech/cekai-link@0.1.3
 cekai-link setup
 ```
 
-公开发行且部署方批准后，可将安装命令替换为 `npm install --global --ignore-scripts @cekaitech/cekai-link@0.1.3`。
+离线安装时，可将包名替换为部署方提供并核对摘要的原 tarball 路径。
 
 Windows 在普通用户 PowerShell 使用 `.cmd`，无需修改全局执行策略：
 
 ```powershell
-npm.cmd install --global --ignore-scripts C:\reviewed\link.tgz
+npm.cmd install --global --ignore-scripts @cekaitech/cekai-link@0.1.3
 cekai-link.cmd setup
 ```
 
@@ -86,15 +86,13 @@ Link 固定绑定工作目录、`sandbox=read-only` 和 `approval_policy=never`�
 
 ## Install and first use
 
-This source defines `@cekaitech/cekai-link@0.1.3`; it is not yet an npm release. Use only an owner-reviewed tarball for isolated acceptance. Existing 0.1.2 users keep their running package until the deployment owner's coordinated upgrade:
+Install `@cekaitech/cekai-link@0.1.3` from npm after your deployment owner confirms that Central accepts this version. Mac, Windows and Linux use the same Node.js package; no repository clone is needed. Existing devices upgrade on the deployment owner's schedule and keep their configuration, pairing and workspace registration:
 
 ```sh
-npm install --global --ignore-scripts /absolute/path/to/reviewed-link.tgz
+npm install --global --ignore-scripts @cekaitech/cekai-link@0.1.3
 ```
 
-Check the original tarball SHA256 against the trusted delivery record. Installing a package does not grant Central admission.
-
-After registry publication and exact Central approval, install with `npm install --global --ignore-scripts @cekaitech/cekai-link@0.1.3`.
+For offline installation, replace the package specifier with an owner-provided original tarball path and check its SHA256 against the trusted delivery record. Installing a package does not grant Central admission.
 
 Use `npm.cmd` and `cekai-link.cmd` in Windows PowerShell. You do not need to change your global execution policy.
 
