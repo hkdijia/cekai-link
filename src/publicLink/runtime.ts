@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createPublicLinkApi, type PublicLinkApi } from './api.js';
-import { createPublicLinkConfigStore, defaultPublicLinkRuntimePath, type PublicLinkConfigStore } from './config.js';
+import { createPublicLinkConfigStore, defaultPublicLinkRuntimePath, writePublicLinkFile, type PublicLinkConfigStore } from './config.js';
 import { createPublicCodexRuntime, type PublicCodexRuntime } from './codex.js';
 import { readPublicSourceRuntimeIdentity, verifyPublicSourcePackage } from './packageIdentity.js';
 import { validatePublicLinkWorkspace } from './workspace.js';
@@ -76,10 +76,8 @@ export function createPublicLinkRuntime(input: {
     const stop = () => shutdown.abort(new Error('Link runtime stopped'));
     try {
       await mkdir(path.dirname(lockPath), { recursive: true, mode: 0o700 });
-      const handle = await open(lockPath, 'wx', 0o600).catch(() => { throw new Error('Link runtime lock exists; inspect the owning process before recovering a stale lock'); });
+      await writePublicLinkFile(lockPath, owner, true).catch(() => { throw new Error('Link runtime lock exists; inspect the owning process before recovering a stale lock'); });
       acquired = true;
-      try { await handle.writeFile(owner); }
-      finally { await handle.close(); }
       signal?.addEventListener('abort', stop, { once: true });
       if (signal?.aborted) stop();
       shutdown.signal.throwIfAborted();

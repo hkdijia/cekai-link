@@ -1,14 +1,19 @@
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import * as fileSystem from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { operatePublicLinkService } from './service.js';
 import { createPublicLinkConfigStore } from './config.js';
 import * as identity from './packageIdentity.js';
-import { readServiceRecord, serviceOwnerPath, serviceRecordPath, withServiceLock, writeServiceJson, type PublicLinkServiceRecord } from './serviceFiles.js';
+import { readServiceOwner, readServiceRecord, serviceOwnerPath, serviceRecordPath, withServiceLock, writeServiceJson, type PublicLinkServiceRecord } from './serviceFiles.js';
 import type { PublicLinkNativeService } from '../adapters/publicLinkService/native.js';
 
 const roots: string[] = [];
+vi.mock('node:fs/promises', async original => {
+  const actual = await original<typeof import('node:fs/promises')>();
+  return { ...actual, open: vi.fn(actual.open) };
+});
 afterEach(async () => { vi.restoreAllMocks(); vi.unstubAllEnvs(); await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), 'public-service-')); roots.push(root);
@@ -25,6 +30,28 @@ async function fixture() {
 }
 
 describe('public service lifecycle and owned files', () => {
+  it('publishes a complete exclusive owner record without exposing partial bytes and keeps an existing owner intact', async () => {
+    const { configPath } = await fixture();
+    let writing!: () => void; let release!: () => void;
+    const entered = new Promise<void>(resolve => { writing = resolve; });
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const originalOpen = (await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).open;
+    vi.mocked(fileSystem.open).mockImplementation(async (...args) => {
+      const handle = await originalOpen(...args);
+      const write = handle.writeFile.bind(handle);
+      vi.spyOn(handle, 'writeFile').mockImplementation(async (...data) => { writing(); await gate; return write(...data); });
+      return handle;
+    });
+    const owner = { pid: process.pid, token: 'a'.repeat(36) };
+    const publish = writeServiceJson(serviceOwnerPath(configPath), owner, true);
+    await entered;
+    try { expect(await readServiceOwner(configPath)).toBeUndefined(); }
+    finally { release(); await publish; vi.mocked(fileSystem.open).mockImplementation(originalOpen); }
+    expect(await readServiceOwner(configPath)).toEqual(owner);
+    await expect(writeServiceJson(serviceOwnerPath(configPath), { ...owner, token: 'b'.repeat(36) }, true)).rejects.toMatchObject({ code: 'EEXIST' });
+    expect(await readServiceOwner(configPath)).toEqual(owner);
+  });
+
   it('waits for the new runtime identity and running state instead of accepting its lock or an older snapshot', async () => {
     const { configPath, runtimePath, manager, input } = await fixture();
     let runningPublished = false;

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { lstat, mkdir, open, readFile, rename, rm } from 'node:fs/promises';
+import { lstat, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { writePublicLinkFile } from './config.js';
 
 export interface PublicLinkServiceRecord {
   readonly version: 1;
@@ -50,14 +51,7 @@ export async function readServiceOwner(configPath: string): Promise<PublicLinkSe
 
 /** Shared only by service registration/stop intent; credentials stay in the existing config. */
 export async function writeServiceJson(file: string, value: unknown, exclusive = false): Promise<void> {
-  await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-  const temporary = exclusive ? file : `${file}.${randomUUID()}.tmp`;
-  const handle = await open(temporary, 'wx', 0o600);
-  try { await handle.writeFile(`${JSON.stringify(value)}\n`); await handle.sync(); }
-  finally { await handle.close(); }
-  if (exclusive) return;
-  try { await rename(temporary, file); }
-  finally { await rm(temporary, { force: true }); }
+  await writePublicLinkFile(file, `${JSON.stringify(value)}\n`, exclusive);
 }
 
 export async function withServiceLock<T>(configPath: string, action: () => Promise<T>): Promise<T> {

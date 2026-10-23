@@ -1,4 +1,5 @@
-import { chmod, mkdir, open, readFile, rename, rm } from 'node:fs/promises';
+import { chmod, link, mkdir, open, readFile, rename, rm } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { homedir, hostname, platform } from 'node:os';
 import path from 'node:path';
@@ -63,24 +64,23 @@ export function createPublicLinkConfigStore(filePath = defaultPublicLinkConfigPa
     },
     async save(value) {
       const parsed = parsePublicLinkConfig(value);
-      const directory = path.dirname(resolved);
-      await mkdir(directory, { recursive: true, mode: 0o700 });
-      const temporary = path.join(directory, `.config-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`);
-      const handle = await open(temporary, 'wx', 0o600);
-      try {
-        await handle.writeFile(`${JSON.stringify(parsed, null, 2)}\n`, 'utf8');
-        await handle.sync();
-      } finally { await handle.close(); }
-      try {
-        await chmod(temporary, 0o600);
-        await rename(temporary, resolved);
-        await chmod(resolved, 0o600);
-      } catch (error) {
-        await rm(temporary, { force: true });
-        throw error;
-      }
+      await writePublicLinkFile(resolved, `${JSON.stringify(parsed, null, 2)}\n`);
     }
   };
+}
+
+/** Publish complete private bytes; exclusive creation never replaces an existing owner. */
+export async function writePublicLinkFile(file: string, bytes: string, exclusive = false): Promise<void> {
+  await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  const handle = await open(temporary, 'wx', 0o600);
+  try {
+    try { await handle.writeFile(bytes, 'utf8'); await handle.sync(); }
+    finally { await handle.close(); }
+    await chmod(temporary, 0o600);
+    if (exclusive) await link(temporary, file);
+    else await rename(temporary, file);
+  } finally { await rm(temporary, { force: true }); }
 }
 
 /** The synchronous package entry reads the same config as setup/inspect. */
