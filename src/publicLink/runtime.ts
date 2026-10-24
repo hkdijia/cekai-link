@@ -7,6 +7,7 @@ import { createPublicLinkConfigStore, defaultPublicLinkRuntimePath, replacePubli
 import { createPublicCodexRuntime, type PublicCodexRuntime } from './codex.js';
 import { readPublicSourceRuntimeIdentity, verifyPublicSourcePackage } from './packageIdentity.js';
 import { validatePublicLinkWorkspace } from './workspace.js';
+import { assertNoPendingUpdate } from './updateState.js';
 import {
   objectValue,
   type PublicLinkConfig,
@@ -75,6 +76,7 @@ export function createPublicLinkRuntime(input: {
     let acquired = false;
     const stop = () => shutdown.abort(new Error('Link runtime stopped'));
     try {
+      await assertNoPendingUpdate(configStore.filePath);
       await mkdir(path.dirname(lockPath), { recursive: true, mode: 0o700 });
       await writePublicLinkFile(lockPath, owner, true).catch(() => { throw new Error('Link runtime lock exists; inspect the owning process before recovering a stale lock'); });
       acquired = true;
@@ -166,6 +168,7 @@ export function createPublicLinkRuntime(input: {
     await heartbeat(config);
     await publish();
     if (recoveryTask) throw new Error('Link runtime recovery required; inspect the previous task before restarting');
+    await assertNoPendingUpdate(configStore.filePath);
     state = 'running'; await publish();
     const task = await api.claim(config.serverUrl, config.credential, leaseMs);
     if (!task) { await heartbeat(config); return 'no-task'; }

@@ -7,7 +7,7 @@ The standalone client is open source under Apache-2.0. Central is a separate ser
 
 ## 中文接入指引
 
-通过 npm 安装部署方批准的精确版本，无需 clone 仓库；Mac、Windows、Linux 使用同一个 Node.js 包。以下命令以 `@cekaitech/cekai-link@0.1.5` 为例，执行前确认该版本已在 npm 发行且获目标 Central 准入。已有设备按部署方安排升级，保留原配置和配对，无需重新登记工作区。
+通过 npm 安装部署方批准的精确版本，无需 clone 仓库；Mac、Windows、Linux 使用同一个 Node.js 包。以下命令以 `@cekaitech/cekai-link@1.0.0` 为例，执行前确认该版本已在 npm 发行且获目标 Central 准入。已有设备按部署方安排升级，保留原配置和配对，无需重新登记工作区。
 
 ### 1. 安装前准备
 
@@ -30,7 +30,7 @@ codex --version
 Mac / Linux 使用当前用户可写的 npm global prefix，不为 Link 修改系统目录权限：
 
 ```sh
-npm install --global --ignore-scripts @cekaitech/cekai-link@0.1.5
+npm install --global --ignore-scripts @cekaitech/cekai-link@1.0.0
 cekai-link setup
 ```
 
@@ -39,7 +39,7 @@ cekai-link setup
 Windows 在普通用户 PowerShell 使用 `.cmd`，无需修改全局执行策略：
 
 ```powershell
-npm.cmd install --global --ignore-scripts @cekaitech/cekai-link@0.1.5
+npm.cmd install --global --ignore-scripts @cekaitech/cekai-link@1.0.0
 cekai-link.cmd setup
 ```
 
@@ -88,10 +88,10 @@ Link 固定绑定工作目录、`sandbox=read-only` 和 `approval_policy=never`�
 
 ## Install and first use
 
-Install the exact version approved by your deployment owner. The examples use `@cekaitech/cekai-link@0.1.5`; confirm that the version exists on npm and that your Central accepts it before installing. Mac, Windows and Linux use the same Node.js package; no repository clone is needed. Existing devices upgrade on the deployment owner's schedule and keep their configuration, pairing and workspace registration:
+Install the exact version approved by your deployment owner. The examples use `@cekaitech/cekai-link@1.0.0`; confirm that the version exists on npm and that your Central accepts it before installing. Mac, Windows and Linux use the same Node.js package; no repository clone is needed. Existing devices upgrade on the deployment owner's schedule and keep their configuration, pairing and workspace registration:
 
 ```sh
-npm install --global --ignore-scripts @cekaitech/cekai-link@0.1.5
+npm install --global --ignore-scripts @cekaitech/cekai-link@1.0.0
 ```
 
 For offline installation, replace the package specifier with an owner-provided original tarball path and check its SHA256 against the trusted delivery record. Installing a package does not grant Central admission.
@@ -121,6 +121,27 @@ cekai-link.cmd run
 ```
 
 An explicit `CEKAI_LINK_COMPATIBILITY_PATH` override wins and is revalidated; an invalid override never silently falls back. Executable detection proves Codex is located, not that account/model access works.
+
+## 1.0 self-service lifecycle
+
+1.0 keeps the same read-only questions, pairing, workspace and explicit chat binding. It adds a user-confirmed upgrade operation and shared lifecycle diagnosis. After the target Central has approved an exact published version, run:
+
+```sh
+cekai-link update 1.0.1
+cekai-link update status
+cekai-link update resume
+cekai-link update rollback
+```
+
+`1.0.1` is an example, not a claim that this version exists or is approved. An absolute trusted original `.tgz` path can replace the version for offline delivery. `--yes` explicitly accepts the displayed lifecycle plan for trusted automation. The command downloads only the user-requested exact version from the official npm origin, verifies package content and the confirmed Central's exact compatibility metadata before stopping anything. No background polling, latest-based selection, install hooks, extra runtime dependencies or silent updates are used.
+
+The original npm CLI remains the stable entry. New verified runtime files live in this configuration's owned version directory; the old installed files remain available. Use `--version` to see the effective selection. A normally stopped foreground Link stays foreground; an enabled service is normally stopped and restored, and a disabled service remains disabled. Pairing/workspace/chat identity and the current heartbeat are retained. The original service PATH/Codex home and executable locations are reused; shell-only secret variables are not persisted.
+
+A failed or interrupted transition stays visible in `inspect` and `update status`. `update resume` rechecks the current Central and continues the same transaction. `update rollback` restores the retained package only when Central currently approves it; otherwise ask the deployment owner to restore compatible admission first. Unknown runtime locks and unconfirmed tasks are preserved and never replayed. Upgrade operation recovery does not authorize deleting task/runtime locks. Keep protected update materials until the deployment owner no longer needs recovery; they can contain your complete local configuration and must stay outside Git and your project.
+
+**First move from 0.1.5:** use the deployment owner's coordinated npm installation of 1.0 and setup for the approved exact metadata; 0.1.5 has no updater. Once 1.0 is installed, keep its original npm entry for subsequent upgrades. The updater targets 1.x or later; a full return to 0.1.5 uses the retained original package/config/mapping and corresponding Central approval. Before npm uninstall, moving Node, or removing the original CLI installation, stop and uninstall the service normally. `service install --disabled` registers an optional service without enabling questions; use `service start` when ready.
+
+中文：先确认部署方已批准目标精确版本，再运行 `cekai-link update <版本>`，确认显示的计划即可；可信离线包可用绝对路径代替版本。运行中的前台进程先正常Ctrl+C；已有后台服务由升级操作正常停止并恢复，原停用服务保持停用。`inspect` 与 `update status` 会给出下一步，中断使用 `update resume`；恢复旧版使用 `update rollback`，旧版也必须获当前Central准入。不要求用户编辑配置/锁文件，不重配对或重复任务。当前1.0仍须经过正式发行/生产批准后用于日常，源码构建不等于已发布。
 
 ## 0.1.5 background service and upgrade
 
@@ -200,7 +221,7 @@ Build digests prove content consistency, not publisher authenticity or authoriza
 
 ## Build from source
 
-This source targets version `0.1.5`. A clean source build is not a registry publication or production approval; use the exact released package accepted by your deployment owner for daily use.
+This source targets version `1.0.0`. A clean source build is not a registry publication or production approval; use the exact released package accepted by your deployment owner for daily use.
 
 ```sh
 npm ci --ignore-scripts

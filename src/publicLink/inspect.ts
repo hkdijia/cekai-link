@@ -8,6 +8,8 @@ import { createPublicLinkConfigStore, defaultPublicLinkRuntimePath } from './con
 import { readPublicLinkRuntimeStatus, type PublicLinkRuntimeStatus } from './runtime.js';
 import { verifyPublicSourcePackage, readPublicSourceRuntimeIdentity } from './packageIdentity.js';
 import { digestValue, type PublicLinkCentralSnapshot, type PublicLinkConfig } from './protocol.js';
+import { readServiceRecord } from './serviceFiles.js';
+import { readUpdateState } from './updateState.js';
 
 export type PublicLinkOverall = 'ready' | 'setup-required' | 'degraded' | 'offline' | 'unavailable';
 
@@ -39,7 +41,8 @@ export interface PublicLinkSnapshot {
   };
   readonly scope: { readonly registeredProjectCount: number | null };
   readonly sources: { readonly localConfiguration: 'available' | 'invalid'; readonly central: 'available' | 'unavailable' };
-  readonly nextAction: { readonly code: 'configure-compatibility' | 'install-codex' | 'repair-local-configuration' | 'resolve-recovery' | 'diagnose-codex' | 'diagnose-central' | 'pair-device' | 'register-workspace' | 'start-link' | 'bind-conversation' | 'retry-central-inspection' | 'ask-project-question'; readonly label: string; readonly reason: string };
+  readonly lifecycle: { readonly service: 'absent' | 'enabled' | 'disabled' | 'unknown'; readonly update: 'none' | 'pending' | 'completed' | 'unknown' };
+  readonly nextAction: { readonly code: 'resume-update' | 'configure-compatibility' | 'install-codex' | 'repair-local-configuration' | 'resolve-recovery' | 'diagnose-codex' | 'diagnose-central' | 'pair-device' | 'register-workspace' | 'start-link' | 'bind-conversation' | 'retry-central-inspection' | 'ask-project-question'; readonly label: string; readonly reason: string };
 }
 
 type PublicLinkRuntimeFailure = 'codex-start-failed' | 'codex-initialization-timeout' | 'central-unreachable' | 'central-rejected' | 'recovery-required' | 'runtime-failed';
@@ -76,7 +79,14 @@ export async function readPublicLinkSnapshot(input: {
   const centralDispatchReady = central?.dispatchReady ?? null;
   const lastFailure = classifyRuntimeFailure(runtime?.lastError);
   const recoveryPending = Boolean(runtime?.currentTask && !alive);
-  const next = selectNext({ localConfiguration, runtimeInvalid, pairing, workspaceRegistration, launcher, heartbeat, artifact, central, centralCompatibility, centralDispatchReady, codexInstallation, lastFailure, recoveryPending });
+  let service: PublicLinkSnapshot['lifecycle']['service'] = 'unknown';
+  let update: PublicLinkSnapshot['lifecycle']['update'] = 'unknown';
+  try { const value = await readServiceRecord(store.filePath); service = value ? value.enabled ? 'enabled' : 'disabled' : 'absent'; } catch { /* preserve invalid state for diagnosis */ }
+  try { const value = await readUpdateState(store.filePath); update = value ? value.phase === 'completed' ? 'completed' : 'pending' : 'none'; } catch { /* no raw state leakage */ }
+  const next = update === 'pending' ? decision('degraded', 'resume-update', '运行 cekai-link update resume', '升级尚未完成；保留原配对与恢复材料，继续同一事务，不重复启动或安装。')
+    : service === 'unknown' || update === 'unknown' ? decision('unavailable', 'repair-local-configuration', '核对本机生命周期记录', '升级或服务记录无法确认，保留文件并联系部署方，不删除锁。')
+    : selectNext({ localConfiguration, runtimeInvalid, pairing, workspaceRegistration, launcher, heartbeat, artifact, central, centralCompatibility, centralDispatchReady, codexInstallation, lastFailure, recoveryPending });
+  if (next.action.code === 'start-link' && service !== 'absent') next.action = { code: 'start-link', label: '运行 cekai-link service start', reason: service === 'disabled' ? '后台服务由用户停用；显式start才恢复，run不会自动启用服务。' : '后台服务已登记但当前未运行；先正常start，失败时按inspect下一步处理。' };
   return {
     schemaVersion: 1, overall: next.overall,
     setup: { installation: 'installed', pairing, workspaceRegistration, conversationBinding: central?.conversationBinding ?? 'unavailable' },
@@ -85,7 +95,7 @@ export async function readPublicLinkSnapshot(input: {
       ...(artifact.source ? { publicSourceRevision: artifact.source.revision, packageArtifactId: artifact.source.artifactId, compatibilityMapping: artifact.source.mapping } : {}), centralCompatibility, centralDispatchReady },
     scope: { registeredProjectCount: config?.workspace ? 1 : config ? 0 : null },
     sources: { localConfiguration, central: central ? 'available' : 'unavailable' },
-    nextAction: next.action
+    lifecycle: { service, update }, nextAction: next.action
   };
 }
 

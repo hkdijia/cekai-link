@@ -24,8 +24,8 @@ export const serviceRecordPath = (configPath: string): string => `${configPath}.
 export const serviceOwnerPath = (configPath: string): string => `${configPath}.service-owner.json`;
 export const publicLinkServiceId = (configPath: string): string => `cekai-link-public-${createHash('sha256').update(configPath).digest('hex').slice(0, 16)}`;
 
-export async function readServiceRecord(configPath: string): Promise<PublicLinkServiceRecord | undefined> {
-  const value = await readServiceJson(serviceRecordPath(configPath));
+export async function readServiceRecord(configPath: string, filePath = serviceRecordPath(configPath)): Promise<PublicLinkServiceRecord | undefined> {
+  const value = await readServiceJson(filePath);
   if (!value) return undefined;
   const record = value as unknown as PublicLinkServiceRecord;
   const required = ['version', 'configPath', 'runtimePath', 'nodePath', 'entryPath', 'packageArtifactId', 'home', 'searchPath', 'enabled'];

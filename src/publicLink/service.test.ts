@@ -30,6 +30,12 @@ async function fixture() {
 }
 
 describe('public service lifecycle and owned files', () => {
+  it('registers an explicitly disabled service without starting the runtime', async () => {
+    const { configPath, manager, input } = await fixture();
+    expect(await operatePublicLinkService('install', { ...input, enableOnInstall: false })).toMatchObject({ action: 'installed-disabled', enabled: false, process: 'stopped' });
+    expect(manager.install).toHaveBeenCalledOnce(); expect(manager.start).not.toHaveBeenCalled();
+    expect((await readServiceRecord(configPath))?.enabled).toBe(false);
+  });
   it('retries transient Windows replace denial without deleting a valid target and preserves it after bounded failure', async () => {
     const { root } = await fixture();
     const source = path.join(root, 'prepared'); const target = path.join(root, 'current');

@@ -42,9 +42,14 @@ async function refreshIdentity(root: string, files = publicSourcePackageFiles(ro
 describe('independent public source identity', () => {
   it('retains the exact previous format for inspection without weakening current client startup or content checks', async () => {
     const { root } = await fixture();
+    const updateModules = ['dist/publicLink/update.js', 'dist/publicLink/updatePackage.js', 'dist/publicLink/updateState.js'];
+    for (const file of updateModules) await rm(path.join(root, file));
+    const beforeUpdate = SOURCE_PACKAGE_FILES.filter(file => !updateModules.includes(file));
+    await refreshIdentity(root, beforeUpdate);
+    expect(verifyPublicSourcePackage(root, { allowPreviousInventory: true }).files).toEqual(beforeUpdate);
     const serviceModules = ['dist/publicLink/service.js', 'dist/publicLink/serviceFiles.js', 'dist/adapters/publicLinkService/native.js'];
     for (const file of serviceModules) await rm(path.join(root, file));
-    const beforeService = SOURCE_PACKAGE_FILES.filter(file => !serviceModules.includes(file));
+    const beforeService = beforeUpdate.filter(file => !serviceModules.includes(file));
     await refreshIdentity(root, beforeService);
     expect(() => verifyPublicSourcePackage(root)).toThrow('identity is invalid');
     expect(verifyPublicSourcePackage(root, { allowPreviousInventory: true }).files).toEqual(beforeService);

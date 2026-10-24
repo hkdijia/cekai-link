@@ -7,6 +7,8 @@ import { assertIdentifier, httpsServerUrl } from './protocol.js';
 import { validatePublicLinkWorkspace } from './workspace.js';
 import { verifyPublicSourcePackage } from './packageIdentity.js';
 import { operatePublicLinkService, runPublicLinkServiceHost, type PublicLinkServiceAction } from './service.js';
+import { runPublicLinkUpdate, type PublicUpdateCommand } from './update.js';
+import { assertNoPendingUpdate } from './updateState.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
@@ -18,6 +20,8 @@ export type PublicLinkCommand =
   | { readonly command: 'pair'; readonly stdinCode: boolean; readonly serverUrl: string }
   | { readonly command: 'workspace-add'; readonly directory: string }
   | { readonly command: 'service'; readonly action: PublicLinkServiceAction }
+  | { readonly command: 'service-install-disabled' }
+  | { readonly command: 'update'; readonly update: PublicUpdateCommand }
   | { readonly command: 'service-host'; readonly configPath: string }
   | { readonly command: 'run' };
 
@@ -30,6 +34,8 @@ const help = [
   '  cekai-link inspect [--json]  查看状态和唯一下一步；status / doctor 为同一入口',
   '  cekai-link service install  可选：后台运行并在当前用户登录后启动；先正常停止前台 run',
   '  cekai-link service status   查看用户级服务；start / stop / uninstall 用于启停或移除',
+  '  cekai-link update <version>  确认后升级到指定精确版本；可传可信原tar绝对路径',
+  '  cekai-link update status    升级状态；resume 续接 / rollback 请求恢复保留版本',
   '  cekai-link --version         查看安装包版本和源码身份',
   '  cekai-link --help            查看此帮助（也可使用 help / -h）', '',
   '首次接入：先确认本机 Codex 可独立问答 → setup → run → 在目标聊天显式绑定设备和工作区。',
@@ -49,6 +55,13 @@ export function parsePublicLinkArgs(argv: readonly string[]): PublicLinkCommand 
     && (argv.length === 1 || (argv.length === 2 && argv[1] === '--json'))) return { command: 'inspect', json: argv.length === 2 };
   if (argv[0] === 'setup' && argv.length === 1) return { command: 'setup' };
   if (argv[0] === 'run' && argv.length === 1) return { command: 'run' };
+  if (argv[0] === 'service' && argv[1] === 'install' && argv[2] === '--disabled' && argv.length === 3) return { command: 'service-install-disabled' };
+  if (argv[0] === 'update' && (argv.length === 2 || argv.length === 3 && argv[2] === '--yes')) {
+    const target = argv[1]!;
+    if (target === 'status' && argv.length === 2) return { command: 'update', update: { action: 'status' } };
+    if (target === 'resume' || target === 'rollback') return { command: 'update', update: { action: target, yes: argv.length === 3 } };
+    if (target !== 'status' && (path.isAbsolute(target) || /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(target))) return { command: 'update', update: { action: 'apply', target, yes: argv.length === 3 } };
+  }
   if (argv[0] === 'service' && argv.length === 2 && ['install', 'start', 'status', 'stop', 'uninstall'].includes(argv[1]!)) return { command: 'service', action: argv[1] as PublicLinkServiceAction };
   if (argv[0] === 'service' && argv[1] === 'host' && argv[2] === '--config' && argv.length === 4 && path.isAbsolute(argv[3]!)) return { command: 'service-host', configPath: path.resolve(argv[3]!) };
   if (argv[0] === 'pair' && argv[1] === '--server' && (argv.length === 3 || (argv.length === 4 && argv[3] === '--code-stdin'))) {
@@ -76,6 +89,14 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     catch { process.exitCode = 1; } // Diagnose through inspect; never send raw failures to native journals.
     return;
   }
+  if (command.command === 'update') {
+    process.stdout.write(`${JSON.stringify(await runPublicLinkUpdate(command.update))}\n`);
+    return;
+  }
+  if (command.command === 'service-install-disabled') {
+    process.stdout.write(`${JSON.stringify(await operatePublicLinkService('install', { enableOnInstall: false }))}\n`);
+    return;
+  }
   if (command.command === 'service') {
     const result = await operatePublicLinkService(command.action);
     process.stdout.write(`${JSON.stringify(result)}\n`);
@@ -93,6 +114,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     return;
   }
   const identity = readPublicLinkRuntimeIdentity();
+  await assertNoPendingUpdate(config.filePath);
   if (command.command === 'pair') {
     const existing = await config.load();
     const code = command.stdinCode ? await readPairingCodeFromStdin() : await askPublicLinkQuestion('设备配对码（输入不回显）：', true);

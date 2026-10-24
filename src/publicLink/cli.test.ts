@@ -15,6 +15,11 @@ describe('public Link CLI surface', () => {
     for (const action of ['install', 'start', 'status', 'stop', 'uninstall']) {
       expect(parsePublicLinkArgs(['service', action])).toEqual({ command: 'service', action });
     }
+    expect(parsePublicLinkArgs(['update', '1.0.1'])).toEqual({ command: 'update', update: { action: 'apply', target: '1.0.1', yes: false } });
+    expect(parsePublicLinkArgs(['update', 'rollback', '--yes'])).toEqual({ command: 'update', update: { action: 'rollback', yes: true } });
+    expect(parsePublicLinkArgs(['update', 'resume'])).toEqual({ command: 'update', update: { action: 'resume', yes: false } });
+    expect(parsePublicLinkArgs(['service', 'install', '--disabled'])).toEqual({ command: 'service-install-disabled' });
+    for (const argv of [['update', 'latest'], ['update', '^1.0.0'], ['update', '1.0.1', '--yes', '--yes'], ['update', 'status', '--yes']]) expect(() => parsePublicLinkArgs(argv)).toThrow('Usage:');
     for (const argv of [['service'], ['service', 'update'], ['service', 'install', '--force'], ['service', 'status', '--json', '--json']]) {
       expect(() => parsePublicLinkArgs(argv)).toThrow('Usage:');
     }

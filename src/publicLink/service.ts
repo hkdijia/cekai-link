@@ -9,6 +9,7 @@ import { readPublicLinkSnapshot } from './inspect.js';
 import { readPublicSourceRuntimeIdentity, verifyPublicSourcePackage } from './packageIdentity.js';
 import { createPublicLinkRuntime, readPublicLinkRuntimeIdentity, readPublicLinkRuntimeStatus } from './runtime.js';
 import { readServiceOwner, readServiceRecord, serviceOwnerPath, serviceRecordPath, withServiceLock, writeServiceJson, type PublicLinkServiceRecord } from './serviceFiles.js';
+import { assertNoPendingUpdate, readUpdateState } from './updateState.js';
 
 export type PublicLinkServiceAction = 'install' | 'start' | 'stop' | 'uninstall' | 'status';
 interface ServiceContext {
@@ -17,6 +18,7 @@ interface ServiceContext {
   readonly packageRoot?: string;
   readonly native?: (record: PublicLinkServiceRecord) => PublicLinkNativeService;
   readonly waitMs?: number;
+  readonly enableOnInstall?: boolean;
 }
 
 /** Local lifecycle only. Native registration never changes pairing or task state. */
@@ -34,6 +36,7 @@ export async function operatePublicLinkService(action: PublicLinkServiceAction, 
     const snapshot = await readPublicLinkSnapshot({ configPath, runtimePath: (await readServiceRecord(configPath))?.runtimePath ?? input.runtimePath });
     return { ...status, runtime: snapshot.runtime, nextAction: snapshot.nextAction };
   }
+  await assertNoPendingUpdate(configPath);
   return withServiceLock(configPath, async () => {
     let record = await readServiceRecord(configPath);
     if (action === 'install' || action === 'start') {
@@ -45,7 +48,7 @@ export async function operatePublicLinkService(action: PublicLinkServiceAction, 
       }
       // A new terminal need not reproduce the original PATH or other harmless
       // exported settings. Reuse the explicitly installed service environment.
-      const desired = record ? { ...record, enabled: true } : proposed;
+      const desired = record ? { ...record, enabled: action === 'install' ? input.enableOnInstall ?? true : true } : proposed;
       if (record && await processState(record) === 'running') return { ...await read(), action: 'already-running' };
       await assertIdle(desired);
       if (await readServiceOwner(configPath)) throw new Error('A previous service process record remains; inspect ownership before recovery');
@@ -56,6 +59,10 @@ export async function operatePublicLinkService(action: PublicLinkServiceAction, 
       }
       await writeServiceJson(serviceRecordPath(configPath), desired, !record);
       record = desired;
+      if (!desired.enabled) {
+        await manager.install();
+        return { ...await read(), action: 'installed-disabled' };
+      }
       await manager.start();
       await until(async () => await processState(desired) === 'running', input.waitMs);
       return { ...await read(), action: action === 'install' ? 'installed' : 'started' };
@@ -102,6 +109,9 @@ export async function runPublicLinkServiceHost(configPath: string): Promise<void
   if (record.codexExecutable) process.env.CEKAI_CODEX_EXECUTABLE = record.codexExecutable;
   if (record.appData) process.env.APPDATA = record.appData;
   if (record.localAppData) process.env.LOCALAPPDATA = record.localAppData;
+  const update = await readUpdateState(configPath);
+  if (update?.phase === 'starting' && update.toArtifact === record.packageArtifactId) process.env.CEKAI_LINK_UPDATE_TRANSACTION = update.token;
+  await assertNoPendingUpdate(configPath);
   const identity = readPublicLinkRuntimeIdentity();
   await assertIdle(record);
   const owner = { pid: process.pid, token: randomUUID() };
@@ -146,7 +156,7 @@ async function installationRecord(configPath: string, input: ServiceContext): Pr
     ...(process.env.CEKAI_CODEX_EXECUTABLE?.trim() ? { codexExecutable: path.resolve(process.env.CEKAI_CODEX_EXECUTABLE.trim()) } : {}),
     ...(process.platform === 'win32' && process.env.APPDATA ? { appData: path.resolve(process.env.APPDATA) } : {}),
     ...(process.platform === 'win32' && process.env.LOCALAPPDATA ? { localAppData: path.resolve(process.env.LOCALAPPDATA) } : {}),
-    ...(process.env.CEKAI_LINK_COMPATIBILITY_PATH?.trim() ? { compatibilityPath: process.env.CEKAI_LINK_COMPATIBILITY_PATH.trim() } : {}), enabled: true
+    ...(process.env.CEKAI_LINK_COMPATIBILITY_PATH?.trim() ? { compatibilityPath: process.env.CEKAI_LINK_COMPATIBILITY_PATH.trim() } : {}), enabled: input.enableOnInstall ?? true
   };
   // Validate before writing or invoking a manager; control characters cannot reach definitions.
   for (const value of Object.values(record)) if (typeof value === 'string' && /[\x00-\x1f\x7f]/.test(value)) throw new Error('Link service environment contains unsupported characters');
