@@ -55,6 +55,18 @@ describe('public service lifecycle and owned files', () => {
     await expect(recoverIdleServiceOwner(record, 'previous-boot', ready)).rejects.toThrow('仍在运行');
     expect(await readServiceOwner(configPath)).toBeDefined(); expect(await readFile(`${configPath}.runtime.lock`, 'utf8')).toContain('original-runtime');
   });
+
+  it('distinguishes a reused Windows PID by creation identity even when Fast Startup retains the boot identity', async () => {
+    const { configPath, runtimePath, input } = await fixture();
+    await expect(operatePublicLinkService('install', input)).rejects.toThrow('unconfirmed');
+    const record = (await readServiceRecord(configPath))!;
+    await writeServiceJson(serviceOwnerPath(configPath), { pid: process.pid, token: 'a'.repeat(36), bootId: 'same-kernel-boot', birthId: '12345678' });
+    await writeFile(`${configPath}.runtime.lock`, JSON.stringify({ pid: process.pid, token: 'original-runtime' }));
+    await writeFile(runtimePath, JSON.stringify({ state: 'running', pid: process.pid, sequence: 902, updatedAt: new Date().toISOString() }));
+    await recoverIdleServiceOwner(record, 'same-kernel-boot', { processBirth: async () => '87654321', central: async () => ({ dispatchReady: true, centralCompatibility: 'accepted' }), native: async () => 'active' });
+    expect(await readServiceOwner(configPath)).toBeUndefined();
+    expect(JSON.parse(await readFile(runtimePath, 'utf8')).sequence).toBe(902);
+  });
   it('registers an explicitly disabled service without starting the runtime', async () => {
     const { configPath, manager, input } = await fixture();
     expect(await operatePublicLinkService('install', { ...input, enableOnInstall: false })).toMatchObject({ action: 'installed-disabled', enabled: false, process: 'stopped' });

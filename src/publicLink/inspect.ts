@@ -10,7 +10,7 @@ import { verifyPublicSourcePackage, readPublicSourceRuntimeIdentity } from './pa
 import { digestValue, type PublicLinkCentralSnapshot, type PublicLinkConfig } from './protocol.js';
 import { readServiceOwner, readServiceRecord } from './serviceFiles.js';
 import { readUpdateState } from './updateState.js';
-import { publicLinkBootIdentity } from '../adapters/publicLinkService/native.js';
+import { publicLinkBootIdentity, publicLinkProcessBirth } from '../adapters/publicLinkService/native.js';
 
 export type PublicLinkOverall = 'ready' | 'setup-required' | 'degraded' | 'offline' | 'unavailable';
 
@@ -77,6 +77,7 @@ export async function readPublicLinkSnapshot(input: {
     if (owner?.bootId && runtime?.pid === owner.pid) {
       const bootId = await publicLinkBootIdentity();
       if (!bootId || bootId !== owner.bootId) alive = false;
+      if (alive && owner.birthId) { const birth = await publicLinkProcessBirth(owner.pid); if (!birth || birth !== owner.birthId) alive = false; }
     }
   } catch { alive = false; }
   const launcher = runtime?.state === 'running' || runtime?.state === 'busy' ? alive ? 'running' : 'stopped' : runtime?.state === 'starting' ? alive ? 'starting' : 'stopped' : runtime?.state === 'failed' ? 'failed' : runtime ? 'stopped' : 'unavailable';

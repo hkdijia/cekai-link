@@ -3,7 +3,7 @@ import { access, mkdir, readFile, realpath, rename, rm } from 'node:fs/promises'
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { createPublicLinkNativeService, publicLinkBootIdentity, type PublicLinkNativeService } from '../adapters/publicLinkService/native.js';
+import { createPublicLinkNativeService, publicLinkBootIdentity, publicLinkProcessBirth, type PublicLinkNativeService } from '../adapters/publicLinkService/native.js';
 import { createPublicLinkConfigStore, defaultPublicLinkConfigPath, defaultPublicLinkRuntimePath } from './config.js';
 import { readPublicLinkSnapshot } from './inspect.js';
 import { readPublicSourceRuntimeIdentity, verifyPublicSourcePackage } from './packageIdentity.js';
@@ -52,7 +52,9 @@ export async function operatePublicLinkService(action: PublicLinkServiceAction, 
       const desired = record ? { ...record, enabled: action === 'install' ? input.enableOnInstall ?? true : true } : proposed;
       const previousOwner = record ? await readServiceOwner(configPath) : undefined;
       const bootId = previousOwner?.bootId ? await publicLinkBootIdentity() : undefined;
-      const sameBoot = !previousOwner?.bootId || !bootId || previousOwner.bootId === bootId;
+      const birthId = previousOwner?.birthId ? await publicLinkProcessBirth(previousOwner.pid) : undefined;
+      const sameBoot = (!previousOwner?.bootId || !bootId || previousOwner.bootId === bootId)
+        && (!previousOwner?.birthId || !birthId || previousOwner.birthId === birthId);
       if (record && sameBoot && await processState(record) === 'running') return { ...await read(), action: 'already-running' };
       if (record && previousOwner) await recoverIdleServiceOwner(desired, bootId);
       await assertIdle(desired);
@@ -121,7 +123,8 @@ export async function runPublicLinkServiceHost(configPath: string): Promise<void
   const bootId = await publicLinkBootIdentity();
   await recoverIdleServiceOwner(record, bootId);
   await assertIdle(record);
-  const owner = { pid: process.pid, token: randomUUID(), ...(bootId ? { bootId } : {}) };
+  const birthId = await publicLinkProcessBirth();
+  const owner = { pid: process.pid, token: randomUUID(), ...(bootId ? { bootId } : {}), ...(birthId ? { birthId } : {}) };
   await writeServiceJson(serviceOwnerPath(configPath), owner, true);
   const controller = new AbortController();
   const stop = () => controller.abort();
@@ -149,10 +152,13 @@ export async function runPublicLinkServiceHost(configPath: string): Promise<void
 export async function recoverIdleServiceOwner(record: PublicLinkServiceRecord, bootId?: string, input: {
   readonly central?: () => Promise<{ dispatchReady: boolean; centralCompatibility: string }>;
   readonly native?: () => Promise<string>;
+  readonly processBirth?: () => Promise<string | undefined>;
 } = {}): Promise<void> {
   const owner = await readServiceOwner(record.configPath); if (!owner) return;
   const previousBoot = Boolean(bootId && owner.bootId && bootId !== owner.bootId);
-  if (!previousBoot && alive(owner.pid)) throw new Error('原服务进程仍在运行或归属未确认；不接管运行锁。');
+  const observedBirth = owner.birthId ? await (input.processBirth ?? (() => publicLinkProcessBirth(owner.pid)))() : undefined;
+  const reusedPid = Boolean(owner.birthId && observedBirth && owner.birthId !== observedBirth);
+  if (!previousBoot && !reusedPid && alive(owner.pid)) throw new Error('原服务进程仍在运行或归属未确认；不接管运行锁。');
   const runtime = await readPublicLinkRuntimeStatus(record.runtimePath), lock = await readRuntimeLock(record.configPath);
   if (!runtime || runtime.currentTask || runtime.pid !== owner.pid || lock?.pid !== owner.pid || runtime.lastError) throw new Error('旧实例含未确认任务或恢复事实不足；保留记录并inspect。');
   const config = await createPublicLinkConfigStore(record.configPath).load(); if (!config?.workspace) throw new Error('原服务配置未确认。');
@@ -165,7 +171,7 @@ export async function recoverIdleServiceOwner(record: PublicLinkServiceRecord, b
   const recovery = path.join(`${record.configPath}.service-recovery`, randomUUID()); await mkdir(recovery, { recursive: true, mode: 0o700 });
   // Preserve the runtime and monotonic sequence in place. Only exact old owner
   // records move aside; the subsequent wx runtime lock still proves exclusivity.
-  await writeServiceJson(path.join(recovery, 'evidence.json'), { owner, runtime, lock: JSON.parse(oldLock), previousBoot });
+  await writeServiceJson(path.join(recovery, 'evidence.json'), { owner, runtime, lock: JSON.parse(oldLock), previousBoot, reusedPid });
   if (await readFile(`${record.configPath}.runtime.lock`, 'utf8') !== oldLock) throw new Error('原运行锁发生变化，恢复停止。');
   await rename(`${record.configPath}.runtime.lock`, path.join(recovery, 'runtime.lock.before'));
   await rename(serviceOwnerPath(record.configPath), path.join(recovery, 'service-owner.before.json'));

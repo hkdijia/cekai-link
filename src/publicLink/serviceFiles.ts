@@ -19,7 +19,7 @@ export interface PublicLinkServiceRecord {
   readonly compatibilityPath?: string;
   readonly enabled: boolean;
 }
-export interface PublicLinkServiceOwner { readonly pid: number; readonly token: string; readonly bootId?: string }
+export interface PublicLinkServiceOwner { readonly pid: number; readonly token: string; readonly bootId?: string; readonly birthId?: string }
 export const serviceRecordPath = (configPath: string): string => `${configPath}.service.json`;
 export const serviceOwnerPath = (configPath: string): string => `${configPath}.service-owner.json`;
 export const publicLinkServiceId = (configPath: string): string => `cekai-link-public-${createHash('sha256').update(configPath).digest('hex').slice(0, 16)}`;
@@ -44,9 +44,10 @@ export async function readServiceRecord(configPath: string, filePath = serviceRe
 export async function readServiceOwner(configPath: string): Promise<PublicLinkServiceOwner | undefined> {
   const value = await readServiceJson(serviceOwnerPath(configPath));
   if (!value) return undefined;
-  if (!['pid,token', 'bootId,pid,token'].includes(Object.keys(value).sort().join(',')) || !Number.isSafeInteger(value.pid) || Number(value.pid) <= 0
+  if (!('pid' in value) || !('token' in value) || Object.keys(value).some(key => !['pid', 'token', 'bootId', 'birthId'].includes(key)) || !Number.isSafeInteger(value.pid) || Number(value.pid) <= 0
     || typeof value.token !== 'string' || !/^[a-f0-9-]{36}$/.test(value.token)
-    || value.bootId !== undefined && (typeof value.bootId !== 'string' || !/^[A-Za-z0-9-]{8,80}$/.test(value.bootId))) throw new Error('Link service process record is invalid; preserve it for recovery');
+    || value.bootId !== undefined && (typeof value.bootId !== 'string' || !/^[A-Za-z0-9-]{8,80}$/.test(value.bootId))
+    || value.birthId !== undefined && (typeof value.birthId !== 'string' || !/^\d{8,30}$/.test(value.birthId))) throw new Error('Link service process record is invalid; preserve it for recovery');
   return value as unknown as PublicLinkServiceOwner;
 }
 

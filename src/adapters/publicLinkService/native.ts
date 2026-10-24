@@ -173,3 +173,12 @@ export async function publicLinkBootIdentity(): Promise<string | undefined> {
     const value = result.stdout.trim(); return /^[A-Za-z0-9-]{8,80}$/.test(value) ? value : undefined;
   } catch { return undefined; }
 }
+
+/** Windows Fast Startup may retain boot time; process creation identifies PID reuse. */
+export async function publicLinkProcessBirth(pid = process.pid): Promise<string | undefined> {
+  if (process.platform !== 'win32' || !Number.isInteger(pid) || pid <= 0 || pid > 2_147_483_647) return undefined;
+  try {
+    const result = await executeFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `$ProgressPreference='SilentlyContinue'; (Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}' -ErrorAction Stop).CreationDate.ToUniversalTime().Ticks.ToString()`], { timeout: 15_000, windowsHide: true });
+    const value = result.stdout.trim(); return /^\d{8,30}$/.test(value) ? value : undefined;
+  } catch { return undefined; }
+}
