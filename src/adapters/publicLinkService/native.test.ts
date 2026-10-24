@@ -12,6 +12,15 @@ const record = (home: string): PublicLinkServiceRecord => ({ version: 1, configP
 const scratch = async () => { const root = await mkdtemp(path.join(tmpdir(), 'public-service-native-')); roots.push(root); return root; };
 
 describe('public user service adapters', () => {
+  it('uses a fresh bounded Windows read after a transient failure, but refuses mutation on persistent unknown', async () => {
+    const value = record(await scratch());
+    const execute = vi.fn<ServiceExecute>().mockRejectedValueOnce(new Error('transient native inspection')).mockResolvedValue({ stdout: 'inactive\n', stderr: '' });
+    const manager = createPublicLinkNativeService(value, { platform: 'win32', execute });
+    expect(await manager.query()).toBe('inactive'); expect(execute).toHaveBeenCalledTimes(2);
+    execute.mockClear().mockRejectedValue(new Error('manager unavailable'));
+    await expect(manager.uninstall()).rejects.toThrow('ownership'); expect(execute).toHaveBeenCalledTimes(2);
+    for (const [, args] of execute.mock.calls) expect(Buffer.from(args.at(-1)!, 'base64').toString('utf16le')).not.toContain('Unregister-ScheduledTask');
+  });
   it('uses separate per-config identities and user-session definitions without credentials, restart loops or raw logs', () => {
     const value = record('/user/home');
     expect(publicLinkServiceId(value.configPath)).not.toBe(publicLinkServiceId('/user/other/config.json'));

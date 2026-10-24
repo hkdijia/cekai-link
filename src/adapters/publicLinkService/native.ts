@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { setTimeout as delay } from 'node:timers/promises';
 import { publicLinkServiceId, type PublicLinkServiceRecord } from '../../publicLink/serviceFiles.js';
 
 export type PublicServiceState = 'active' | 'inactive' | 'absent' | 'unknown' | 'foreign';
@@ -31,7 +32,7 @@ export function createPublicLinkNativeService(record: PublicLinkServiceRecord, i
   const target = `gui/${uid}/${id}`;
   const windowsEnv = { ...process.env, CEKAI_PUBLIC_SERVICE_NAME: id, CEKAI_PUBLIC_SERVICE_NODE: record.nodePath,
     CEKAI_PUBLIC_SERVICE_ARGS: args.map(windowsArgument).join(' ') };
-  const powershell = async (script: string) => execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(`$ErrorActionPreference='Stop'; ${script}`, 'utf16le').toString('base64')], windowsEnv);
+  const powershell = async (script: string) => execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(`$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; ${script}`, 'utf16le').toString('base64')], windowsEnv);
   const readDefinition = async () => {
     try {
       const details = await lstat(definitionPath);
@@ -42,9 +43,15 @@ export function createPublicLinkNativeService(record: PublicLinkServiceRecord, i
   const query = async (): Promise<PublicServiceState> => {
     try {
       if (platform === 'win32') {
-        const result = await powershell(WINDOWS_QUERY);
-        const value = result.stdout.trim();
-        return ['active', 'inactive', 'absent', 'foreign'].includes(value) ? value as PublicServiceState : 'unknown';
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const result = await powershell(WINDOWS_QUERY);
+            const value = result.stdout.trim();
+            if (['active', 'inactive', 'absent', 'foreign'].includes(value)) return value as PublicServiceState;
+          } catch { /* one fresh read may recover a transient native query failure */ }
+          if (attempt === 0) await delay(200);
+        }
+        return 'unknown';
       }
       const fileState = await readDefinition();
       if (fileState === 'foreign') return 'foreign';
