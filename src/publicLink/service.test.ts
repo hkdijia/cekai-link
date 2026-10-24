@@ -3,7 +3,7 @@ import * as fileSystem from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { operatePublicLinkService } from './service.js';
+import { operatePublicLinkService, recoverIdleServiceOwner } from './service.js';
 import { createPublicLinkConfigStore, replacePublicLinkFile } from './config.js';
 import * as identity from './packageIdentity.js';
 import { readServiceOwner, readServiceRecord, serviceOwnerPath, serviceRecordPath, withServiceLock, writeServiceJson, type PublicLinkServiceRecord } from './serviceFiles.js';
@@ -30,6 +30,31 @@ async function fixture() {
 }
 
 describe('public service lifecycle and owned files', () => {
+  it('preserves an exact idle previous-boot owner before restart and retains the latest heartbeat sequence', async () => {
+    const { configPath, runtimePath, input } = await fixture();
+    await expect(operatePublicLinkService('install', input)).rejects.toThrow('unconfirmed');
+    const record = (await readServiceRecord(configPath))!;
+    await writeServiceJson(serviceOwnerPath(configPath), { pid: process.pid, token: 'a'.repeat(36), bootId: 'previous-boot' });
+    await writeFile(`${configPath}.runtime.lock`, JSON.stringify({ pid: process.pid, token: 'original-runtime' }));
+    const runtime = JSON.stringify({ state: 'running', pid: process.pid, sequence: 900, updatedAt: new Date().toISOString() }); await writeFile(runtimePath, runtime);
+    await recoverIdleServiceOwner(record, 'current-boot', { central: async () => ({ dispatchReady: true, centralCompatibility: 'accepted' }), native: async () => 'active' });
+    expect(await readServiceOwner(configPath)).toBeUndefined(); await expect(readFile(`${configPath}.runtime.lock`)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await readFile(runtimePath, 'utf8')).toBe(runtime);
+    expect((await fileSystem.readdir(`${configPath}.service-recovery`))).toHaveLength(1);
+  });
+
+  it('never recovers an unconfirmed task or a live same-boot owner, even when Central is ready', async () => {
+    const { configPath, runtimePath, input } = await fixture();
+    await expect(operatePublicLinkService('install', input)).rejects.toThrow('unconfirmed');
+    const record = (await readServiceRecord(configPath))!;
+    await writeServiceJson(serviceOwnerPath(configPath), { pid: process.pid, token: 'a'.repeat(36), bootId: 'previous-boot' });
+    await writeFile(`${configPath}.runtime.lock`, JSON.stringify({ pid: process.pid, token: 'original-runtime' }));
+    await writeFile(runtimePath, JSON.stringify({ state: 'busy', pid: process.pid, sequence: 901, currentTask: 'uncertain', updatedAt: new Date().toISOString() }));
+    const ready = { central: async () => ({ dispatchReady: true, centralCompatibility: 'accepted' }), native: async () => 'active' };
+    await expect(recoverIdleServiceOwner(record, 'current-boot', ready)).rejects.toThrow('未确认任务');
+    await expect(recoverIdleServiceOwner(record, 'previous-boot', ready)).rejects.toThrow('仍在运行');
+    expect(await readServiceOwner(configPath)).toBeDefined(); expect(await readFile(`${configPath}.runtime.lock`, 'utf8')).toContain('original-runtime');
+  });
   it('registers an explicitly disabled service without starting the runtime', async () => {
     const { configPath, manager, input } = await fixture();
     expect(await operatePublicLinkService('install', { ...input, enableOnInstall: false })).toMatchObject({ action: 'installed-disabled', enabled: false, process: 'stopped' });

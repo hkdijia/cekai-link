@@ -1,15 +1,16 @@
 import { randomUUID } from 'node:crypto';
-import { access, readFile, realpath, rm } from 'node:fs/promises';
+import { access, mkdir, readFile, realpath, rename, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { createPublicLinkNativeService, type PublicLinkNativeService } from '../adapters/publicLinkService/native.js';
+import { createPublicLinkNativeService, publicLinkBootIdentity, type PublicLinkNativeService } from '../adapters/publicLinkService/native.js';
 import { createPublicLinkConfigStore, defaultPublicLinkConfigPath, defaultPublicLinkRuntimePath } from './config.js';
 import { readPublicLinkSnapshot } from './inspect.js';
 import { readPublicSourceRuntimeIdentity, verifyPublicSourcePackage } from './packageIdentity.js';
 import { createPublicLinkRuntime, readPublicLinkRuntimeIdentity, readPublicLinkRuntimeStatus } from './runtime.js';
 import { readServiceOwner, readServiceRecord, serviceOwnerPath, serviceRecordPath, withServiceLock, writeServiceJson, type PublicLinkServiceRecord } from './serviceFiles.js';
 import { assertNoPendingUpdate, readUpdateState } from './updateState.js';
+import { createPublicLinkApi } from './api.js';
 
 export type PublicLinkServiceAction = 'install' | 'start' | 'stop' | 'uninstall' | 'status';
 interface ServiceContext {
@@ -49,7 +50,11 @@ export async function operatePublicLinkService(action: PublicLinkServiceAction, 
       // A new terminal need not reproduce the original PATH or other harmless
       // exported settings. Reuse the explicitly installed service environment.
       const desired = record ? { ...record, enabled: action === 'install' ? input.enableOnInstall ?? true : true } : proposed;
-      if (record && await processState(record) === 'running') return { ...await read(), action: 'already-running' };
+      const previousOwner = record ? await readServiceOwner(configPath) : undefined;
+      const bootId = previousOwner?.bootId ? await publicLinkBootIdentity() : undefined;
+      const sameBoot = !previousOwner?.bootId || !bootId || previousOwner.bootId === bootId;
+      if (record && sameBoot && await processState(record) === 'running') return { ...await read(), action: 'already-running' };
+      if (record && previousOwner) await recoverIdleServiceOwner(desired, bootId);
       await assertIdle(desired);
       if (await readServiceOwner(configPath)) throw new Error('A previous service process record remains; inspect ownership before recovery');
       const manager = native(desired);
@@ -113,8 +118,10 @@ export async function runPublicLinkServiceHost(configPath: string): Promise<void
   if (update?.phase === 'starting' && update.toArtifact === record.packageArtifactId) process.env.CEKAI_LINK_UPDATE_TRANSACTION = update.token;
   await assertNoPendingUpdate(configPath);
   const identity = readPublicLinkRuntimeIdentity();
+  const bootId = await publicLinkBootIdentity();
+  await recoverIdleServiceOwner(record, bootId);
   await assertIdle(record);
-  const owner = { pid: process.pid, token: randomUUID() };
+  const owner = { pid: process.pid, token: randomUUID(), ...(bootId ? { bootId } : {}) };
   await writeServiceJson(serviceOwnerPath(configPath), owner, true);
   const controller = new AbortController();
   const stop = () => controller.abort();
@@ -136,6 +143,32 @@ export async function runPublicLinkServiceHost(configPath: string): Promise<void
     process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop);
     if ((await readServiceOwner(configPath))?.token === owner.token) await rm(serviceOwnerPath(configPath));
   }
+}
+
+/** Reconcile only an owned, idle previous host. Never replay or delete task evidence. */
+export async function recoverIdleServiceOwner(record: PublicLinkServiceRecord, bootId?: string, input: {
+  readonly central?: () => Promise<{ dispatchReady: boolean; centralCompatibility: string }>;
+  readonly native?: () => Promise<string>;
+} = {}): Promise<void> {
+  const owner = await readServiceOwner(record.configPath); if (!owner) return;
+  const previousBoot = Boolean(bootId && owner.bootId && bootId !== owner.bootId);
+  if (!previousBoot && alive(owner.pid)) throw new Error('原服务进程仍在运行或归属未确认；不接管运行锁。');
+  const runtime = await readPublicLinkRuntimeStatus(record.runtimePath), lock = await readRuntimeLock(record.configPath);
+  if (!runtime || runtime.currentTask || runtime.pid !== owner.pid || lock?.pid !== owner.pid || runtime.lastError) throw new Error('旧实例含未确认任务或恢复事实不足；保留记录并inspect。');
+  const config = await createPublicLinkConfigStore(record.configPath).load(); if (!config?.workspace) throw new Error('原服务配置未确认。');
+  const central = await (input.central ?? (() => createPublicLinkApi().readSnapshot(config.serverUrl, config.credential)))();
+  if (!central.dispatchReady || !['accepted', 'compatible'].includes(central.centralCompatibility)
+    || !['active', 'inactive', 'absent'].includes(await (input.native ?? (() => createPublicLinkNativeService(record).query()))())) throw new Error('原服务空闲恢复尚未获权威兼容/原生归属确认。');
+  const oldLock = await readFile(`${record.configPath}.runtime.lock`, 'utf8');
+  const check = await readServiceOwner(record.configPath), latest = await readPublicLinkRuntimeStatus(record.runtimePath);
+  if (check?.token !== owner.token || latest?.pid !== runtime.pid || latest.sequence !== runtime.sequence || latest.currentTask) throw new Error('恢复期间原实例事实发生变化。');
+  const recovery = path.join(`${record.configPath}.service-recovery`, randomUUID()); await mkdir(recovery, { recursive: true, mode: 0o700 });
+  // Preserve the runtime and monotonic sequence in place. Only exact old owner
+  // records move aside; the subsequent wx runtime lock still proves exclusivity.
+  await writeServiceJson(path.join(recovery, 'evidence.json'), { owner, runtime, lock: JSON.parse(oldLock), previousBoot });
+  if (await readFile(`${record.configPath}.runtime.lock`, 'utf8') !== oldLock) throw new Error('原运行锁发生变化，恢复停止。');
+  await rename(`${record.configPath}.runtime.lock`, path.join(recovery, 'runtime.lock.before'));
+  await rename(serviceOwnerPath(record.configPath), path.join(recovery, 'service-owner.before.json'));
 }
 
 async function installationRecord(configPath: string, input: ServiceContext): Promise<PublicLinkServiceRecord> {

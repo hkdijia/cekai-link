@@ -8,8 +8,9 @@ import { createPublicLinkConfigStore, defaultPublicLinkRuntimePath } from './con
 import { readPublicLinkRuntimeStatus, type PublicLinkRuntimeStatus } from './runtime.js';
 import { verifyPublicSourcePackage, readPublicSourceRuntimeIdentity } from './packageIdentity.js';
 import { digestValue, type PublicLinkCentralSnapshot, type PublicLinkConfig } from './protocol.js';
-import { readServiceRecord } from './serviceFiles.js';
+import { readServiceOwner, readServiceRecord } from './serviceFiles.js';
 import { readUpdateState } from './updateState.js';
+import { publicLinkBootIdentity } from '../adapters/publicLinkService/native.js';
 
 export type PublicLinkOverall = 'ready' | 'setup-required' | 'degraded' | 'offline' | 'unavailable';
 
@@ -70,7 +71,14 @@ export async function readPublicLinkSnapshot(input: {
   }
   const pairing = localConfiguration === 'invalid' ? 'unavailable' : config ? 'paired' : 'required';
   const workspaceRegistration = localConfiguration === 'invalid' ? 'unavailable' : config?.workspace ? 'registered' : 'required';
-  const alive = runtime ? processExists(runtime.pid) : false;
+  let alive = runtime ? processExists(runtime.pid) : false;
+  try {
+    const owner = await readServiceOwner(store.filePath);
+    if (owner?.bootId && runtime?.pid === owner.pid) {
+      const bootId = await publicLinkBootIdentity();
+      if (!bootId || bootId !== owner.bootId) alive = false;
+    }
+  } catch { alive = false; }
   const launcher = runtime?.state === 'running' || runtime?.state === 'busy' ? alive ? 'running' : 'stopped' : runtime?.state === 'starting' ? alive ? 'starting' : 'stopped' : runtime?.state === 'failed' ? 'failed' : runtime ? 'stopped' : 'unavailable';
   const age = runtime ? Date.now() - Date.parse(runtime.updatedAt) : NaN;
   const heartbeat = runtime && age >= 0 && age < 90_000 ? 'fresh' : runtime ? 'stale' : 'unknown';

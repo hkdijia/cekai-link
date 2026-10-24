@@ -162,3 +162,14 @@ const WINDOWS_INSTALL = [
 function xml(value: string): string { return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&apos;'); }
 function systemdArgument(value: string): string { return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('%', '%%').replaceAll('$', '$$$$')}"`; }
 function windowsArgument(value: string): string { return `"${value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, '$1$1')}"`; }
+
+/** Local boot identity, never credentials or a user-provided command. */
+export async function publicLinkBootIdentity(): Promise<string | undefined> {
+  try {
+    if (process.platform === 'linux') return (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim();
+    const result = process.platform === 'darwin'
+      ? await executeFile('sysctl', ['-n', 'kern.bootsessionuuid'], { timeout: 10_000 })
+      : await executeFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', "$ProgressPreference='SilentlyContinue'; (Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).LastBootUpTime.ToUniversalTime().Ticks.ToString()"], { timeout: 15_000, windowsHide: true });
+    const value = result.stdout.trim(); return /^[A-Za-z0-9-]{8,80}$/.test(value) ? value : undefined;
+  } catch { return undefined; }
+}
