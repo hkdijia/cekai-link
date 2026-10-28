@@ -6,7 +6,7 @@ import { digestValue, objectValue, type PublicLinkDigest, type PublicLinkRuntime
 
 export const SOURCE_PACKAGE_FILES = [
   'README.md', 'bin/cekai-link-source.cjs', 'package.json',
-  ...['api', 'cli', 'codex', 'compatibility', 'config', 'inspect', 'packageIdentity', 'protocol', 'runtime', 'service', 'serviceFiles', 'setup', 'update', 'updatePackage', 'updateState', 'workspace']
+  ...['api', 'cli', 'codex', 'compatibility', 'config', 'inspect', 'observation', 'packageIdentity', 'protocol', 'runtime', 'service', 'serviceFiles', 'setup', 'update', 'updatePackage', 'updateState', 'workspace']
     .map((name) => `dist/publicLink/${name}.js`),
   'dist/adapters/publicLinkService/native.js'
 ].sort();
@@ -38,9 +38,10 @@ export function verifyPublicSourcePackage(root: string, options: { readonly allo
   exactKeys(value, ['schemaVersion', 'kind', 'packageVersion', 'publicSourceRevision', 'sourceDigest', 'treeDigest', 'packageArtifactId', 'files']);
   // Deployment-side inspection must retain the exact pre-bootstrap format-4
   // inventory. Client startup/build stays strict to the current inventory.
-  const beforeUpdate = currentFiles.filter(file => !['dist/publicLink/update.js', 'dist/publicLink/updatePackage.js', 'dist/publicLink/updateState.js'].includes(file));
+  const beforeObservation = currentFiles.filter(file => file !== 'dist/publicLink/observation.js');
+  const beforeUpdate = beforeObservation.filter(file => !['dist/publicLink/update.js', 'dist/publicLink/updatePackage.js', 'dist/publicLink/updateState.js'].includes(file));
   const beforeService = beforeUpdate.filter(file => !['dist/publicLink/service.js', 'dist/publicLink/serviceFiles.js', 'dist/adapters/publicLinkService/native.js'].includes(file));
-  const previousInventories = [beforeUpdate, beforeService, beforeService.filter(file => file !== 'dist/publicLink/compatibility.js')];
+  const previousInventories = [beforeObservation, beforeUpdate, beforeService, beforeService.filter(file => file !== 'dist/publicLink/compatibility.js')];
   const previous = options.allowPreviousInventory ? previousInventories.find(files => JSON.stringify(value.files) === JSON.stringify(files)) : undefined;
   const files = previous ?? currentFiles;
   if (value.schemaVersion !== 1 || value.kind !== 'public-link-source-build'

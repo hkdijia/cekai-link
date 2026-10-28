@@ -1,3 +1,4 @@
+import { createPublicLinkObservation } from './observation.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createPublicLinkApi } from './api.js';
 import { createServer } from 'node:http';
@@ -5,6 +6,16 @@ import { createServer } from 'node:http';
 afterEach(() => vi.useRealTimers());
 
 describe('public Link Central API', () => {
+  it('uses the existing authenticated observation endpoint without adding task or user identity', async () => {
+    const fetchPort = vi.fn(async (_input: URL | RequestInfo, _init?: RequestInit) => new Response('{"ok":true}', { status: 200 }));
+    const api = createPublicLinkApi(fetchPort);
+    const observation = createPublicLinkObservation(Date.now(), 5).summarize('succeeded', 'accepted');
+    await api.uploadObservation!('http://127.0.0.1', 'credential', 7, observation);
+    expect(String(fetchPort.mock.calls[0][0])).toBe('http://127.0.0.1/api/worker/runtime-observations');
+    expect(JSON.parse(String(fetchPort.mock.calls[0][1]?.body))).toEqual({ schemaVersion: 1, sequence: 7, observation });
+    expect(fetchPort.mock.calls[0][1]?.headers).toMatchObject({ authorization: 'Bearer credential' });
+  });
+
   it('pairs with the read-only capability only', async () => {
     const fetchPort = vi.fn(async (_input: URL | RequestInfo, init?: RequestInit) => new Response(JSON.stringify({
       ok: true, credential: 'credential', worker: { workerId: 'worker', deviceId: 'device' }

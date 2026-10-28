@@ -237,3 +237,9 @@ Development requires Node 20.19+, 22.12+ or 24+, Git and the locked TypeScript/V
 Copyright 2026 hkdijia. Apache-2.0; see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 Node.js, Codex CLI, Git and development tools are separately installed, retain their own licenses and are not bundled.
 Source: [hkdijia/cekai-link](https://github.com/hkdijia/cekai-link).
+
+## 运行状态与匿名观测
+
+本机用 `cekai-link inspect` 查看接入、运行、服务和升级恢复的下一步；部署方提供的只读运行中心可查看用户、设备、项目、任务调度、健康与耗时。运行中心沿用部署方的管理令牌，客户端不新增账号或权限。
+
+Link 在任务结束后尽力上传匿名摘要：结果类别、排队/启动/首次反馈/执行终态/回执的有界耗时。摘要不含提问、回答、路径、用户身份、任务内部 ID、凭据或原始日志；凭据仅用于现有 Worker 接口认证。上报不阻塞问答或决定任务终态，失败不重放问答；本机只保留最多16条待发内存样本，退出或持续失败可能丢失样本。因此趋势是有界观测样本，不是完整任务账本；执行与投递状态以 Central 权威事实为准。

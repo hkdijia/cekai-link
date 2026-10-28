@@ -67,6 +67,17 @@ async function verifiedPackageFixture() {
 }
 
 describe('public Link read-only runtime', () => {
+  it('uploads only anonymous measurements after settlement and never awaits an unavailable sink', async () => {
+    const uploadObservation = vi.fn((_server: string, _credential: string, _sequence: number, _observation: unknown) => new Promise<void>(() => {}));
+    const { runtime, api } = await fixture({ uploadObservation });
+    await expect(runtime.runOnce()).resolves.toBe('completed');
+    expect(api.complete).toHaveBeenCalledOnce();
+    expect(uploadObservation).toHaveBeenCalledOnce();
+    const summary = uploadObservation.mock.calls[0];
+    expect(summary[3]).toMatchObject({ kind: 'runtime-task-summary', outcome: 'succeeded', completion: 'accepted' });
+    expect(JSON.stringify(summary[3])).not.toMatch(/question|answer|taskId|executionId|rootIdentity|canonicalRoot|credential/);
+  });
+
   it('retains a startup failure for inspect and releases only its own runtime lock', async () => {
     const codex: PublicCodexRuntime = {
       start: async () => { throw new Error('Codex app-server could not start'); }, runTurn: vi.fn(),

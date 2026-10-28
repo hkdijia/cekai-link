@@ -1,3 +1,4 @@
+import { createPublicLinkObservation, createPublicObservationSender, type PublicLinkObservation } from './observation.js';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -50,6 +51,10 @@ export function createPublicLinkRuntime(input: {
   const configStore = input.config ?? createPublicLinkConfigStore();
   const shutdown = new AbortController();
   const api = input.api ?? createPublicLinkApi(fetch, { signal: shutdown.signal });
+  const telemetry = createPublicObservationSender(async (sequence, observation) => {
+    const config = await configStore.load();
+    if (config) await api.uploadObservation?.(config.serverUrl, config.credential, sequence, observation);
+  });
   const codex = input.codex ?? createPublicCodexRuntime();
   const runtimePath = path.resolve(input.runtimePath ?? defaultPublicLinkRuntimePath());
   const pollMs = bounded(input.pollMs ?? 2_000, 250, 60_000);
@@ -173,6 +178,9 @@ export function createPublicLinkRuntime(input: {
     const task = await api.claim(config.serverUrl, config.credential, leaseMs);
     if (!task) { await heartbeat(config); return 'no-task'; }
     currentTask = task.taskId; state = 'busy';
+    const observation = createPublicLinkObservation(Date.now(), task.queueMs);
+    let outcome: PublicLinkObservation['outcome'] = 'failed', completion: PublicLinkObservation['completion'] = 'rejected';
+    let category: PublicLinkObservation['failureCategory'] = 'runner-failed';
     const taskController = new AbortController();
     const cancel = () => taskController.abort(shutdown.signal.reason);
     shutdown.signal.addEventListener('abort', cancel, { once: true });
@@ -216,24 +224,32 @@ export function createPublicLinkRuntime(input: {
         || observed.rootIdentity !== workspace.rootIdentity || observed.workspaceKind !== workspace.workspaceKind) throw new Error('Registered workspace identity has changed; run setup with an explicitly registered workspace');
       if (task.leaseExpiresAt <= Date.now()) throw new Error('Link task lease lost');
       armExpiry(task.leaseExpiresAt); schedule();
+      observation.start();
       const answer = await codex.runTurn({
         workspaceKey: workspace.workspaceId, bindingRef: task.bindingRef, cwd: workspace.canonicalRoot,
         request: new TextDecoder('utf-8', { fatal: true }).decode(task.requestBytes), timeoutMs: turnTimeoutMs, signal: taskController.signal,
-        onLifecycle: async () => { await publish(); }
+        onLifecycle: async stage => { observation.lifecycle(stage); await publish(); }
       });
+      observation.end();
       await stopMaintenance();
       taskController.signal.throwIfAborted();
       const answerBytes = Uint8Array.from(Buffer.from(answer, 'utf8'));
+      category = 'completion-failed';
       await api.complete(config.serverUrl, config.credential, task, answerBytes);
+      outcome = 'succeeded'; completion = 'accepted';
       state = 'running';
       return 'completed';
     } catch (error) {
       lastError = error instanceof Error ? error.message : 'public Link task failed';
       const reason = failureReason(error);
-      await api.fail(config.serverUrl, config.credential, task, reason).catch(() => { recoveryTask = task.taskId; });
+      observation.end();
+      if (reason === 'lease-lost') category = 'lease-lost';
+      if (reason === 'codex-maximum-duration-timeout') { category = 'codex-maximum-duration-timeout'; outcome = 'timed-out'; }
+      await api.fail(config.serverUrl, config.credential, task, reason).then(() => { completion = 'accepted'; }, () => { recoveryTask = task.taskId; });
       state = 'failed'; await publish();
       return 'failed';
     } finally {
+      telemetry.emit(observation.summarize(outcome, completion, category));
       await stopMaintenance();
       shutdown.signal.removeEventListener('abort', cancel);
       currentTask = recoveryTask;

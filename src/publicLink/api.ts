@@ -1,3 +1,4 @@
+import type { PublicLinkObservation } from './observation.js';
 import {
   assertIdentifier,
   decodeBytes,
@@ -17,6 +18,7 @@ import {
 } from './protocol.js';
 
 export interface PublicLinkApi {
+  uploadObservation?(serverUrl: string, credential: string, sequence: number, observation: PublicLinkObservation): Promise<void>;
   pair(serverUrl: string, code: string, deviceName: string, identity?: PublicLinkRuntimeIdentity): Promise<Pick<PublicLinkConfig, 'credential' | 'workerId' | 'deviceId'>>;
   register(serverUrl: string, credential: string, identity?: PublicLinkRuntimeIdentity, deviceName?: string, projectId?: string, runtimeHealth?: PublicLinkRuntimeHealth): Promise<{ readonly heartbeatSequence?: number }>;
   heartbeat(serverUrl: string, credential: string, input: { sequence: number; currentTaskId?: string; identity?: PublicLinkRuntimeIdentity; runtimeHealth?: PublicLinkRuntimeHealth }): Promise<void>;
@@ -33,6 +35,9 @@ export function createPublicLinkApi(fetchPort: typeof fetch = fetch, options: { 
   const post = (server: string, endpoint: string, credential: string | undefined, body: unknown) => request(fetchPort, server, endpoint, 'POST', credential, body, options);
   const get = (server: string, endpoint: string, credential: string) => request(fetchPort, server, endpoint, 'GET', credential, undefined, options);
   return {
+    async uploadObservation(serverUrl, credential, sequence, observation) {
+      await expectOk(post(serverUrl, '/api/worker/runtime-observations', credential, { schemaVersion: 1, sequence, observation }), 'runtime observation');
+    },
     async pair(serverUrl, code, deviceName, identity) {
       requirePublicIdentity(serverUrl, identity);
       const response = objectValue(await post(serverUrl, '/api/worker/pair', undefined, {
